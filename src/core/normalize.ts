@@ -182,12 +182,21 @@ export function collectAdvisoryIds(...sources: unknown[]): string[] {
         /^(CVE-\d{4}-\d+|GHSA-[\w-]+)$/i.test(value)
       ) {
         advisoryIds.add(value.toUpperCase());
+        return;
+      }
+
+      if (typeof value === "string") {
+        const match = /\/advisories\/(GHSA-[\w-]+)/i.exec(value);
+        if (match) {
+          advisoryIds.add(match[1].toUpperCase());
+        }
       }
     };
 
     push(source.id);
     push(source.github_advisory_id);
     push(source.ghsaId);
+    push(source.url);
 
     for (const value of asStringArray(source.cves)) {
       push(value);

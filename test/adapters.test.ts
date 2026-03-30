@@ -71,6 +71,12 @@ describe("adapter commands", () => {
       args: ["audit", "--json", "--audit-level=moderate"],
     });
     expect(
+      bunAdapter.buildAuditProcess({ threshold: "moderate", scope: "prod" }),
+    ).toEqual({
+      command: "bun",
+      args: ["audit", "--json", "--audit-level=moderate", "--prod"],
+    });
+    expect(
       bunAdapter.buildRemediationProcess({
         threshold: "moderate",
         scope: "prod",
@@ -135,6 +141,7 @@ describe("adapter fixtures", () => {
       "brace-expansion",
       "node-forge",
     ]);
+    expect(before.entries[0]?.advisoryIds).toEqual(["GHSA-F886-M6HF-6M8V"]);
     expect(after.total).toBe(0);
   });
 });

@@ -1,49 +1,29 @@
 {
-  "summary": {
-    "low": 1,
-    "moderate": 1,
-    "high": 1,
-    "critical": 0,
-    "total": 3
-  },
-  "vulnerabilities": [
+  "brace-expansion": [
     {
-      "package": "brace-expansion",
-      "version": "2.0.2",
+      "id": 1115540,
+      "url": "https://github.com/advisories/GHSA-f886-m6hf-6m8v",
+      "title": "brace-expansion: Zero-step sequence causes process hang and memory exhaustion",
       "severity": "moderate",
-      "advisories": [
-        {
-          "title": "Regular expression denial of service in brace-expansion",
-          "url": "https://github.com/advisories/GHSA-f886-m6hf-6m8v",
-          "cves": ["CVE-2026-33750"],
-          "github_advisory_id": "GHSA-F886-M6HF-6M8V"
-        }
-      ]
-    },
+      "vulnerable_versions": "<1.1.13"
+    }
+  ],
+  "node-forge": [
     {
-      "package": "node-forge",
-      "version": "1.3.3",
+      "id": 1115545,
+      "url": "https://github.com/advisories/GHSA-2328-f5f3-gj25",
+      "title": "Forge has a basicConstraints bypass in its certificate chain verification (RFC 5280 violation)",
       "severity": "high",
-      "advisories": [
-        {
-          "title": "High severity node-forge advisory",
-          "url": "https://github.com/advisories/GHSA-2328-f5f3-gj25",
-          "cves": ["CVE-2026-33891"],
-          "github_advisory_ids": ["GHSA-2328-F5F3-GJ25"]
-        }
-      ]
-    },
+      "vulnerable_versions": "<=1.3.3"
+    }
+  ],
+  "minimist": [
     {
-      "package": "minimist",
-      "version": "0.0.8",
+      "id": 1000001,
+      "url": "https://github.com/advisories/GHSA-vh95-rmgr-6w4m",
+      "title": "Prototype Pollution in minimist",
       "severity": "low",
-      "advisories": [
-        {
-          "title": "Low severity minimist advisory",
-          "url": "https://github.com/advisories/GHSA-vh95-rmgr-6w4m",
-          "github_advisory_id": "GHSA-VH95-RMGR-6W4M"
-        }
-      ]
+      "vulnerable_versions": "<0.2.1"
     }
   ]
 }

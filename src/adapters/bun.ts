@@ -10,11 +10,61 @@ import {
 import type { NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
 
+const BUN_METADATA_KEYS = new Set(["metadata", "summary"]);
+
+function isBunRegistryAdvisory(
+  value: unknown,
+): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    (typeof value.title === "string" ||
+      typeof value.url === "string" ||
+      typeof value.severity === "string" ||
+      typeof value.vulnerable_versions === "string" ||
+      typeof value.id === "number")
+  );
+}
+
+function extractBunAuditItems(json: Record<string, unknown>) {
+  if (Array.isArray(json.vulnerabilities)) {
+    return json.vulnerabilities.filter(isRecord);
+  }
+
+  if (Array.isArray(json.advisories)) {
+    return json.advisories.filter(isRecord);
+  }
+
+  const items: Record<string, unknown>[] = [];
+
+  for (const [packageName, advisories] of Object.entries(json)) {
+    if (BUN_METADATA_KEYS.has(packageName) || !Array.isArray(advisories)) {
+      continue;
+    }
+
+    for (const advisory of advisories) {
+      if (!isBunRegistryAdvisory(advisory)) {
+        continue;
+      }
+
+      items.push({
+        ...advisory,
+        package: packageName,
+      });
+    }
+  }
+
+  return items;
+}
+
 export const bunAdapter: PackageManagerAdapter = {
   manager: "bun",
 
   buildAuditProcess(context) {
     const args = ["audit", "--json", `--audit-level=${context.threshold}`];
+
+    if (context.scope === "prod") {
+      args.push("--prod");
+    }
 
     return {
       command: "bun",
@@ -49,11 +99,7 @@ export const bunAdapter: PackageManagerAdapter = {
       countsFromMetadata(
         isRecord(json.metadata) ? json.metadata.vulnerabilities : undefined,
       ) ?? countsFromMetadata(json.summary);
-    const items = Array.isArray(json.vulnerabilities)
-      ? json.vulnerabilities
-      : Array.isArray(json.advisories)
-        ? json.advisories
-        : [];
+    const items = extractBunAuditItems(json);
     const entries: NormalizedVulnerability[] = [];
 
     for (const item of items) {
@@ -78,7 +124,7 @@ export const bunAdapter: PackageManagerAdapter = {
       const severity = normalizeSeverity(item.severity);
       const advisories = Array.isArray(item.advisories)
         ? item.advisories.filter(isRecord)
-        : [];
+        : [item];
       const advisoryIds = collectAdvisoryIds(item, ...advisories);
       const advisoryWithTitle = advisories.find(
         (advisory) => typeof advisory.title === "string",
