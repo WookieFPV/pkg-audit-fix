@@ -14,7 +14,7 @@ export const npmAdapter: PackageManagerAdapter = {
   manager: "npm",
 
   buildAuditProcess(context) {
-    const args = ["audit", "--json", `--audit-level=${context.threshold}`];
+    const args = ["audit", "--json"];
 
     if (context.scope === "prod") {
       args.push("--omit=dev");
@@ -27,12 +27,7 @@ export const npmAdapter: PackageManagerAdapter = {
   },
 
   buildRemediationProcess(context) {
-    const args = [
-      "audit",
-      "fix",
-      "--json",
-      `--audit-level=${context.threshold}`,
-    ];
+    const args = ["audit", "fix", "--json"];
 
     if (context.scope === "prod") {
       args.push("--omit=dev");

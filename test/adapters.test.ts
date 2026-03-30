@@ -32,7 +32,7 @@ describe("adapter commands", () => {
       npmAdapter.buildAuditProcess({ threshold: "moderate", scope: "prod" }),
     ).toEqual({
       command: "npm",
-      args: ["audit", "--json", "--audit-level=moderate", "--omit=dev"],
+      args: ["audit", "--json", "--omit=dev"],
     });
     expect(
       npmAdapter.buildRemediationProcess({
@@ -41,7 +41,7 @@ describe("adapter commands", () => {
       }),
     ).toEqual({
       command: "npm",
-      args: ["audit", "fix", "--json", "--audit-level=critical"],
+      args: ["audit", "fix", "--json"],
     });
     expect(
       npmAdapter.buildDedupeProcess({ threshold: "moderate", scope: "prod" }),

@@ -112,31 +112,30 @@ export function createSnapshot(input: {
   const derivedCounts = countsFromEntries(filteredEntries);
   const counts = input.counts
     ? {
-        low: severityAtOrAbove("low", input.threshold) ? input.counts.low : 0,
-        moderate: severityAtOrAbove("moderate", input.threshold)
-          ? input.counts.moderate
-          : 0,
-        high: severityAtOrAbove("high", input.threshold)
-          ? input.counts.high
-          : 0,
-        critical: severityAtOrAbove("critical", input.threshold)
-          ? input.counts.critical
-          : 0,
+        low: Math.max(
+          severityAtOrAbove("low", input.threshold) ? input.counts.low : 0,
+          derivedCounts.low,
+        ),
+        moderate: Math.max(
+          severityAtOrAbove("moderate", input.threshold)
+            ? input.counts.moderate
+            : 0,
+          derivedCounts.moderate,
+        ),
+        high: Math.max(
+          severityAtOrAbove("high", input.threshold) ? input.counts.high : 0,
+          derivedCounts.high,
+        ),
+        critical: Math.max(
+          severityAtOrAbove("critical", input.threshold)
+            ? input.counts.critical
+            : 0,
+          derivedCounts.critical,
+        ),
         total: 0,
       }
     : derivedCounts;
   counts.total = counts.low + counts.moderate + counts.high + counts.critical;
-
-  if (counts.total === 0 && derivedCounts.total > 0) {
-    return {
-      manager: input.manager,
-      threshold: input.threshold,
-      scope: input.scope,
-      total: derivedCounts.total,
-      counts: derivedCounts,
-      entries: filteredEntries,
-    };
-  }
 
   return {
     manager: input.manager,
