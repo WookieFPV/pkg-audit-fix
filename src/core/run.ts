@@ -8,7 +8,7 @@ import type {
   NormalizedAuditSnapshot,
   RunAuditFixOptions,
   RunAuditFixResult,
-  StepReporter,
+  StepLifecycleHooks,
 } from "./types.js";
 import { CommandExecutionError } from "./types.js";
 
@@ -40,7 +40,7 @@ export async function runAuditFix(
   dependencies: {
     detectManager?: typeof detectPackageManager | undefined;
     exec?: ExecFunction | undefined;
-    onStep?: StepReporter | undefined;
+    hooks?: StepLifecycleHooks | undefined;
   } = {},
 ): Promise<RunAuditFixResult> {
   const detectManager = dependencies.detectManager ?? detectPackageManager;
@@ -62,15 +62,28 @@ export async function runAuditFix(
   const auditProcess = adapter.buildAuditProcess(context);
 
   const runStep = async (step: CommandStep) => {
-    dependencies.onStep?.({
+    dependencies.hooks?.onStepStart?.({
       label: step.label,
       command: [step.command, ...step.args],
     });
 
-    return exec(step, {
-      cwd: options.cwd,
-      verbose: options.verbose,
-    });
+    try {
+      const result = await exec(step, {
+        cwd: options.cwd,
+        verbose: options.verbose,
+      });
+      dependencies.hooks?.onStepComplete?.({
+        label: step.label,
+        command: [step.command, ...step.args],
+      });
+      return result;
+    } catch (error) {
+      dependencies.hooks?.onStepFail?.({
+        label: step.label,
+        command: [step.command, ...step.args],
+      });
+      throw error;
+    }
   };
 
   const initialAuditStep = withLabel(

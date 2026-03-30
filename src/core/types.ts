@@ -70,7 +70,11 @@ export interface StepEvent {
   command: readonly string[];
 }
 
-export type StepReporter = (event: StepEvent) => void;
+export interface StepLifecycleHooks {
+  onStepStart?: ((event: StepEvent) => void) | undefined;
+  onStepComplete?: ((event: StepEvent) => void) | undefined;
+  onStepFail?: ((event: StepEvent) => void) | undefined;
+}
 
 export interface DetectionResult {
   manager: PackageManager;

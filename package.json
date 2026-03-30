@@ -47,6 +47,7 @@
     "url": "git+https://github.com/example/pkg-audit-fix.git"
   },
   "dependencies": {
+    "picospinner": "3.0.0",
     "package-manager-detector": "1.6.0"
   },
   "devDependencies": {

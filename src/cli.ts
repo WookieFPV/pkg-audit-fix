@@ -13,6 +13,7 @@ import {
   type PackageManagerOverride,
 } from "./core/types.js";
 import { toJsonSummary } from "./reporters/json.js";
+import { createStepLifecycleReporter } from "./reporters/steps.js";
 import { formatFailure, formatTextSummary } from "./reporters/text.js";
 
 const HELP_TEXT = `pkg-audit-fix
@@ -203,6 +204,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     process.env.NO_COLOR = "1";
   }
 
+  const stepReporter = createStepLifecycleReporter({
+    enabled: !options.json,
+    color: options.color,
+    verbose: options.verbose,
+    isInteractive: Boolean(process.stdout.isTTY),
+    write: (text) => {
+      process.stdout.write(text);
+    },
+  });
+
   const result = await runAuditFix(
     {
       cwd: options.cwd,
@@ -213,11 +224,17 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       verbose: options.verbose,
     },
     {
-      onStep: options.json
-        ? undefined
-        : (step) => {
-            process.stdout.write(`Running: ${step.label}\n`);
-          },
+      hooks: {
+        onStepStart: (step) => {
+          stepReporter.start(step);
+        },
+        onStepComplete: (step) => {
+          stepReporter.complete(step);
+        },
+        onStepFail: (step) => {
+          stepReporter.fail(step);
+        },
+      },
     },
   );
 
