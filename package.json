@@ -44,7 +44,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/example/pkg-audit-fix.git"
+    "url": "git+https://github.com/WookieFPV/pkg-audit-fix.git"
   },
   "dependencies": {
     "picospinner": "3.0.0",
