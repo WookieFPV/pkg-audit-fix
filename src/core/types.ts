@@ -44,6 +44,7 @@ export interface ProcessSpec {
 
 export interface CommandStep extends ProcessSpec {
   label: string;
+  acceptedExitCodes?: number[] | undefined;
 }
 
 export interface CommandResult {

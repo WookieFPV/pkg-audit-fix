@@ -3,18 +3,36 @@ import { detectPackageManager } from "./detect-manager.js";
 import { type ExecFunction, executeStep } from "./exec.js";
 import { diffFixedEntries, groupFixedPackages } from "./normalize.js";
 import type {
+  CommandResult,
   CommandStep,
+  NormalizedAuditSnapshot,
   RunAuditFixOptions,
   RunAuditFixResult,
   StepReporter,
 } from "./types.js";
+import { CommandExecutionError } from "./types.js";
 
 function withLabel(
   label: string,
   command: string,
   args: string[],
+  acceptedExitCodes: number[] = [0],
 ): CommandStep {
-  return { label, command, args };
+  return { label, command, args, acceptedExitCodes };
+}
+
+function parseAuditResult(
+  step: CommandStep,
+  result: CommandResult,
+  parse: () => NormalizedAuditSnapshot,
+): NormalizedAuditSnapshot {
+  try {
+    return parse();
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "Failed to parse audit JSON";
+    throw new CommandExecutionError(step, result, reason);
+  }
 }
 
 export async function runAuditFix(
@@ -55,10 +73,16 @@ export async function runAuditFix(
     });
   };
 
-  const initialAuditResult = await runStep(
-    withLabel("initial audit", auditProcess.command, auditProcess.args),
+  const initialAuditStep = withLabel(
+    "initial audit",
+    auditProcess.command,
+    auditProcess.args,
+    [0, 1],
   );
-  const initial = adapter.parseAudit(initialAuditResult.stdout, context);
+  const initialAuditResult = await runStep(initialAuditStep);
+  const initial = parseAuditResult(initialAuditStep, initialAuditResult, () =>
+    adapter.parseAudit(initialAuditResult.stdout, context),
+  );
 
   if (initial.total === 0) {
     return {
@@ -81,8 +105,19 @@ export async function runAuditFix(
     const remediation = adapter.buildRemediationProcess(context);
 
     if (remediation) {
+      const remediationAcceptedExitCodes =
+        remediation.command === "npm" && remediation.args[0] === "audit"
+          ? [0, 1]
+          : remediation.command === "pnpm" && remediation.args[0] === "audit"
+            ? [0, 1]
+            : [0];
       await runStep(
-        withLabel("remediation", remediation.command, remediation.args),
+        withLabel(
+          "remediation",
+          remediation.command,
+          remediation.args,
+          remediationAcceptedExitCodes,
+        ),
       );
     }
 
@@ -99,10 +134,16 @@ export async function runAuditFix(
     }
   }
 
-  const finalAuditResult = await runStep(
-    withLabel("final audit", auditProcess.command, auditProcess.args),
+  const finalAuditStep = withLabel(
+    "final audit",
+    auditProcess.command,
+    auditProcess.args,
+    [0, 1],
   );
-  const final = adapter.parseAudit(finalAuditResult.stdout, context);
+  const finalAuditResult = await runStep(finalAuditStep);
+  const final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
+    adapter.parseAudit(finalAuditResult.stdout, context),
+  );
   const fixedEntries = diffFixedEntries(initial.entries, final.entries);
   const fixed = groupFixedPackages(fixedEntries);
   const fixedCount = Math.max(initial.total - final.total, 0);
