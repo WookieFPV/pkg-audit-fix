@@ -6,6 +6,8 @@ export type AuditScope = "prod" | "dev";
 
 export type AuditLevel = "low" | "moderate" | "high" | "critical";
 
+export type DedupeMode = "auto" | "always" | "never";
+
 export type Severity = AuditLevel;
 
 export type DetectionSource = "override" | "user-agent" | "filesystem";
@@ -61,6 +63,7 @@ export interface RunAuditFixOptions {
   manager: PackageManagerOverride;
   scope: AuditScope;
   threshold: AuditLevel;
+  dedupe: DedupeMode;
   dryRun: boolean;
   verbose: boolean;
 }
@@ -94,6 +97,8 @@ export interface RunAuditFixResult {
   detectionSource: DetectionSource;
   threshold: AuditLevel;
   scope: AuditScope;
+  dedupe: DedupeMode;
+  dedupeRan: boolean;
   dryRun: boolean;
   initial: NormalizedAuditSnapshot;
   final: NormalizedAuditSnapshot;
@@ -109,6 +114,8 @@ export interface JsonSummary {
   detectionSource: DetectionSource;
   threshold: AuditLevel;
   scope: AuditScope;
+  dedupe: DedupeMode;
+  dedupeRan: boolean;
   dryRun: boolean;
   status: RunAuditFixResult["status"];
   fixedCount: number;

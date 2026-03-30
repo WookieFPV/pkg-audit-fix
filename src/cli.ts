@@ -9,6 +9,7 @@ import {
   type AuditLevel,
   type AuditScope,
   CliUsageError,
+  type DedupeMode,
   ManagerDetectionError,
   type PackageManagerOverride,
 } from "./core/types.js";
@@ -28,6 +29,7 @@ Options:
   --dev                                Audit development dependencies instead of prod
   --audit-level <low|moderate|high|critical>
                                        Minimum advisory level, defaults to moderate
+  --dedupe <auto|always|never>         Run a dedupe pass after fixes when supported, defaults to auto
   --dry-run                            Run initial and final audits only
   --json                               Emit a machine-readable final summary
   --verbose                            Stream subprocess output during successful runs
@@ -41,6 +43,7 @@ interface CliOptions {
   manager: PackageManagerOverride;
   scope: AuditScope;
   threshold: AuditLevel;
+  dedupe: DedupeMode;
   dryRun: boolean;
   json: boolean;
   verbose: boolean;
@@ -89,12 +92,21 @@ function parseAuditLevel(value: string): AuditLevel {
   throw new CliUsageError(`Invalid --audit-level value: ${value}`);
 }
 
+function parseDedupeMode(value: string): DedupeMode {
+  if (value === "auto" || value === "always" || value === "never") {
+    return value;
+  }
+
+  throw new CliUsageError(`Invalid --dedupe value: ${value}`);
+}
+
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     cwd: process.cwd(),
     manager: "auto",
     scope: "prod",
     threshold: "moderate",
+    dedupe: "auto",
     dryRun: false,
     json: false,
     verbose: false,
@@ -128,6 +140,17 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--dry-run") {
       options.dryRun = true;
+      continue;
+    }
+
+    if (arg === "--dedupe") {
+      options.dedupe = parseDedupeMode(expectValue(argv, index, "--dedupe"));
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--dedupe=")) {
+      options.dedupe = parseDedupeMode(arg.slice("--dedupe=".length));
       continue;
     }
 
@@ -220,6 +243,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       manager: options.manager,
       scope: options.scope,
       threshold: options.threshold,
+      dedupe: options.dedupe,
       dryRun: options.dryRun,
       verbose: options.verbose,
     },

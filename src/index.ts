@@ -3,6 +3,7 @@ export { runAuditFix } from "./core/run.js";
 export type {
   AuditLevel,
   AuditScope,
+  DedupeMode,
   DetectionResult,
   JsonSummary,
   NormalizedAuditSnapshot,

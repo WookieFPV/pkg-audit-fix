@@ -48,6 +48,13 @@ export const npmAdapter: PackageManagerAdapter = {
     return null;
   },
 
+  buildDedupeProcess() {
+    return {
+      command: "npm",
+      args: ["dedupe"],
+    };
+  },
+
   parseAudit(stdout, context) {
     const json = parseJsonObject(stdout, "npm");
     const vulnerabilities = isRecord(json.vulnerabilities)

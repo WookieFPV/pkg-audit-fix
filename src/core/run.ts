@@ -6,6 +6,7 @@ import type {
   CommandResult,
   CommandStep,
   NormalizedAuditSnapshot,
+  ProcessSpec,
   RunAuditFixOptions,
   RunAuditFixResult,
   StepLifecycleHooks,
@@ -33,6 +34,26 @@ function parseAuditResult(
       error instanceof Error ? error.message : "Failed to parse audit JSON";
     throw new CommandExecutionError(step, result, reason);
   }
+}
+
+function shouldRunDedupe(input: {
+  mode: RunAuditFixOptions["dedupe"];
+  remainingCount: number;
+  dedupeProcess: ProcessSpec | null;
+}): boolean {
+  if (!input.dedupeProcess) {
+    return false;
+  }
+
+  if (input.mode === "always") {
+    return true;
+  }
+
+  if (input.mode === "never") {
+    return false;
+  }
+
+  return input.remainingCount > 0;
 }
 
 export async function runAuditFix(
@@ -103,6 +124,8 @@ export async function runAuditFix(
       detectionSource: detection.source,
       threshold: options.threshold,
       scope: options.scope,
+      dedupe: options.dedupe,
+      dedupeRan: false,
       dryRun: options.dryRun,
       initial,
       final: initial,
@@ -146,17 +169,66 @@ export async function runAuditFix(
       );
     }
   }
+  let final: NormalizedAuditSnapshot;
+  let dedupeRan = false;
 
-  const finalAuditStep = withLabel(
-    "Final audit",
-    auditProcess.command,
-    auditProcess.args,
-    [0, 1],
-  );
-  const finalAuditResult = await runStep(finalAuditStep);
-  const final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
-    adapter.parseAudit(finalAuditResult.stdout, context),
-  );
+  if (options.dryRun || options.dedupe === "never") {
+    const finalAuditStep = withLabel(
+      "Final audit",
+      auditProcess.command,
+      auditProcess.args,
+      [0, 1],
+    );
+    const finalAuditResult = await runStep(finalAuditStep);
+    final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
+      adapter.parseAudit(finalAuditResult.stdout, context),
+    );
+  } else {
+    const postFixAuditStep = withLabel(
+      "Recheck after fixes",
+      auditProcess.command,
+      auditProcess.args,
+      [0, 1],
+    );
+    const postFixAuditResult = await runStep(postFixAuditStep);
+    const postFixSnapshot = parseAuditResult(
+      postFixAuditStep,
+      postFixAuditResult,
+      () => adapter.parseAudit(postFixAuditResult.stdout, context),
+    );
+    const dedupeProcess = adapter.buildDedupeProcess(context);
+
+    if (
+      dedupeProcess &&
+      shouldRunDedupe({
+        mode: options.dedupe,
+        remainingCount: postFixSnapshot.total,
+        dedupeProcess,
+      })
+    ) {
+      dedupeRan = true;
+      await runStep(
+        withLabel(
+          "Consolidate dependency tree",
+          dedupeProcess.command,
+          dedupeProcess.args,
+        ),
+      );
+
+      const finalAuditStep = withLabel(
+        "Final audit",
+        auditProcess.command,
+        auditProcess.args,
+        [0, 1],
+      );
+      const finalAuditResult = await runStep(finalAuditStep);
+      final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
+        adapter.parseAudit(finalAuditResult.stdout, context),
+      );
+    } else {
+      final = postFixSnapshot;
+    }
+  }
   const fixedEntries = diffFixedEntries(initial.entries, final.entries);
   const fixed = groupFixedPackages(fixedEntries);
   const fixedCount = Math.max(initial.total - final.total, 0);
@@ -167,6 +239,8 @@ export async function runAuditFix(
     detectionSource: detection.source,
     threshold: options.threshold,
     scope: options.scope,
+    dedupe: options.dedupe,
+    dedupeRan,
     dryRun: options.dryRun,
     initial,
     final,

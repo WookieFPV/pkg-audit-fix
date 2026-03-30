@@ -19,6 +19,12 @@ describe("adapter commands", () => {
       command: "pnpm",
       args: ["audit", "--json", "--fix", "--audit-level=high", "--dev"],
     });
+    expect(
+      pnpmAdapter.buildDedupeProcess({ threshold: "moderate", scope: "prod" }),
+    ).toEqual({
+      command: "pnpm",
+      args: ["dedupe"],
+    });
   });
 
   it("builds npm commands with prod omission", () => {
@@ -36,6 +42,12 @@ describe("adapter commands", () => {
     ).toEqual({
       command: "npm",
       args: ["audit", "fix", "--json", "--audit-level=critical"],
+    });
+    expect(
+      npmAdapter.buildDedupeProcess({ threshold: "moderate", scope: "prod" }),
+    ).toEqual({
+      command: "npm",
+      args: ["dedupe"],
     });
   });
 
@@ -55,6 +67,9 @@ describe("adapter commands", () => {
       command: "bun",
       args: ["update", "--production"],
     });
+    expect(
+      bunAdapter.buildDedupeProcess({ threshold: "moderate", scope: "prod" }),
+    ).toBeNull();
   });
 });
 

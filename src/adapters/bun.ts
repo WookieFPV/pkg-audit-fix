@@ -43,6 +43,10 @@ export const bunAdapter: PackageManagerAdapter = {
     return null;
   },
 
+  buildDedupeProcess() {
+    return null;
+  },
+
   parseAudit(stdout, context) {
     const json = parseJsonObject(stdout, "bun");
     const counts =

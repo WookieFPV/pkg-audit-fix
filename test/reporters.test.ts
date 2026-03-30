@@ -10,6 +10,8 @@ describe("formatTextSummary", () => {
       detectionSource: "filesystem",
       threshold: "moderate",
       scope: "prod",
+      dedupe: "auto",
+      dedupeRan: false,
       dryRun: false,
       initial: {
         manager: "pnpm",
@@ -53,6 +55,8 @@ describe("formatTextSummary", () => {
       detectionSource: "user-agent",
       threshold: "moderate",
       scope: "prod",
+      dedupe: "auto",
+      dedupeRan: false,
       dryRun: false,
       initial: {
         manager: "npm",

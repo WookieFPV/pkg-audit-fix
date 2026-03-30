@@ -16,5 +16,6 @@ export interface PackageManagerAdapter {
   buildAuditProcess(context: AdapterContext): ProcessSpec;
   buildRemediationProcess(context: AdapterContext): ProcessSpec | null;
   buildPostRemediationProcess(context: AdapterContext): ProcessSpec | null;
+  buildDedupeProcess(context: AdapterContext): ProcessSpec | null;
   parseAudit(stdout: string, context: AdapterContext): NormalizedAuditSnapshot;
 }

@@ -6,6 +6,8 @@ export function toJsonSummary(result: RunAuditFixResult): JsonSummary {
     detectionSource: result.detectionSource,
     threshold: result.threshold,
     scope: result.scope,
+    dedupe: result.dedupe,
+    dedupeRan: result.dedupeRan,
     dryRun: result.dryRun,
     status: result.status,
     fixedCount: result.fixedCount,

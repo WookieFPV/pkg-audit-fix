@@ -46,6 +46,13 @@ export const pnpmAdapter: PackageManagerAdapter = {
     };
   },
 
+  buildDedupeProcess() {
+    return {
+      command: "pnpm",
+      args: ["dedupe"],
+    };
+  },
+
   parseAudit(stdout, context) {
     const json = parseJsonObject(stdout, "pnpm");
     const advisories = isRecord(json.advisories)
