@@ -25,8 +25,8 @@ Usage:
 Options:
   --cwd <path>                         Project directory, defaults to process.cwd()
   --manager <auto|pnpm|npm|bun>       Override package manager detection
-  --prod                               Audit production dependencies only (default)
-  --dev                                Audit development dependencies instead of prod
+  --prod                               Audit production dependencies only
+  --dev                                Audit development dependencies only
   --audit-level <low|moderate|high|critical>
                                        Minimum advisory level, defaults to moderate
   --dedupe <auto|always|never>         Run a dedupe pass after fixes when supported, defaults to auto
@@ -104,7 +104,7 @@ function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     cwd: process.cwd(),
     manager: "auto",
-    scope: "prod",
+    scope: "all",
     threshold: "moderate",
     dedupe: "auto",
     dryRun: false,

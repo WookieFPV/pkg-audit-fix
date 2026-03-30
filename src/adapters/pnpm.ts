@@ -15,27 +15,32 @@ export const pnpmAdapter: PackageManagerAdapter = {
   manager: "pnpm",
 
   buildAuditProcess(context) {
+    const args = ["audit", "--json", `--audit-level=${context.threshold}`];
+
+    if (context.scope === "prod") {
+      args.push("--prod");
+    } else if (context.scope === "dev") {
+      args.push("--dev");
+    }
+
     return {
       command: "pnpm",
-      args: [
-        "audit",
-        "--json",
-        `--audit-level=${context.threshold}`,
-        context.scope === "prod" ? "--prod" : "--dev",
-      ],
+      args,
     };
   },
 
   buildRemediationProcess(context) {
+    const args = ["audit", "--json", "--fix", `--audit-level=${context.threshold}`];
+
+    if (context.scope === "prod") {
+      args.push("--prod");
+    } else if (context.scope === "dev") {
+      args.push("--dev");
+    }
+
     return {
       command: "pnpm",
-      args: [
-        "audit",
-        "--json",
-        "--fix",
-        `--audit-level=${context.threshold}`,
-        context.scope === "prod" ? "--prod" : "--dev",
-      ],
+      args,
     };
   },
 

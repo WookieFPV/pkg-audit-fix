@@ -18,6 +18,8 @@ export const npmAdapter: PackageManagerAdapter = {
 
     if (context.scope === "prod") {
       args.push("--omit=dev");
+    } else if (context.scope === "dev") {
+      args.push("--only=dev");
     }
 
     return {
@@ -31,6 +33,8 @@ export const npmAdapter: PackageManagerAdapter = {
 
     if (context.scope === "prod") {
       args.push("--omit=dev");
+    } else if (context.scope === "dev") {
+      args.push("--only=dev");
     }
 
     return {

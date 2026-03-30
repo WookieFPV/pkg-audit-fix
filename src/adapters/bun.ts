@@ -16,10 +16,6 @@ export const bunAdapter: PackageManagerAdapter = {
   buildAuditProcess(context) {
     const args = ["audit", "--json", `--audit-level=${context.threshold}`];
 
-    if (context.scope === "prod") {
-      args.push("--prod");
-    }
-
     return {
       command: "bun",
       args,

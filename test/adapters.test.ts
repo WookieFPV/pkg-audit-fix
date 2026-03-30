@@ -8,6 +8,12 @@ import { readFixture } from "./helpers.js";
 describe("adapter commands", () => {
   it("builds pnpm audit and remediation commands", () => {
     expect(
+      pnpmAdapter.buildAuditProcess({ threshold: "moderate", scope: "all" }),
+    ).toEqual({
+      command: "pnpm",
+      args: ["audit", "--json", "--audit-level=moderate"],
+    });
+    expect(
       pnpmAdapter.buildAuditProcess({ threshold: "moderate", scope: "prod" }),
     ).toEqual({
       command: "pnpm",
@@ -29,6 +35,12 @@ describe("adapter commands", () => {
 
   it("builds npm commands with prod omission", () => {
     expect(
+      npmAdapter.buildAuditProcess({ threshold: "moderate", scope: "all" }),
+    ).toEqual({
+      command: "npm",
+      args: ["audit", "--json"],
+    });
+    expect(
       npmAdapter.buildAuditProcess({ threshold: "moderate", scope: "prod" }),
     ).toEqual({
       command: "npm",
@@ -41,7 +53,7 @@ describe("adapter commands", () => {
       }),
     ).toEqual({
       command: "npm",
-      args: ["audit", "fix", "--json"],
+      args: ["audit", "fix", "--json", "--only=dev"],
     });
     expect(
       npmAdapter.buildDedupeProcess({ threshold: "moderate", scope: "prod" }),
@@ -53,10 +65,10 @@ describe("adapter commands", () => {
 
   it("builds bun commands with update-based remediation", () => {
     expect(
-      bunAdapter.buildAuditProcess({ threshold: "moderate", scope: "prod" }),
+      bunAdapter.buildAuditProcess({ threshold: "moderate", scope: "all" }),
     ).toEqual({
       command: "bun",
-      args: ["audit", "--json", "--audit-level=moderate", "--prod"],
+      args: ["audit", "--json", "--audit-level=moderate"],
     });
     expect(
       bunAdapter.buildRemediationProcess({

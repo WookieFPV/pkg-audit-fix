@@ -2,7 +2,7 @@ export type PackageManager = "pnpm" | "npm" | "bun";
 
 export type PackageManagerOverride = "auto" | PackageManager;
 
-export type AuditScope = "prod" | "dev";
+export type AuditScope = "all" | "prod" | "dev";
 
 export type AuditLevel = "low" | "moderate" | "high" | "critical";
 

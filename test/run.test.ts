@@ -23,7 +23,7 @@ describe("runAuditFix", () => {
       {
         cwd: "/tmp/project",
         manager: "auto",
-        scope: "prod",
+        scope: "all",
         threshold: "moderate",
         dedupe: "auto",
         dryRun: true,
@@ -244,7 +244,7 @@ describe("runAuditFix", () => {
       {
         cwd: "/tmp/project",
         manager: "bun",
-        scope: "prod",
+        scope: "all",
         threshold: "moderate",
         dedupe: "always",
         dryRun: false,
