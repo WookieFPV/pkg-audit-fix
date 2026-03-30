@@ -34,7 +34,7 @@ describe("runAuditFix", () => {
       },
     );
 
-    expect(steps).toEqual(["initial audit", "final audit"]);
+    expect(steps).toEqual(["Initial audit", "Final audit"]);
     expect(result.fixedCount).toBe(0);
     expect(result.remainingCount).toBe(3);
     expect(result.exitCode).toBe(2);
@@ -44,10 +44,10 @@ describe("runAuditFix", () => {
   it("runs remediation and post-install steps when the adapter needs them", async () => {
     const steps: string[] = [];
     const stdoutByStep: Record<string, string> = {
-      "initial audit": readFixture("pnpm", "before.json"),
-      remediation: readFixture("pnpm", "before.json"),
-      "post-remediation install": "",
-      "final audit": readFixture("pnpm", "after.json"),
+      "Initial audit": readFixture("pnpm", "before.json"),
+      "Apply fixes": readFixture("pnpm", "before.json"),
+      "Reinstall dependencies": "",
+      "Final audit": readFixture("pnpm", "after.json"),
     };
     const exec = vi.fn(async (step) => {
       steps.push(step.label);
@@ -78,10 +78,10 @@ describe("runAuditFix", () => {
     );
 
     expect(steps).toEqual([
-      "initial audit",
-      "remediation",
-      "post-remediation install",
-      "final audit",
+      "Initial audit",
+      "Apply fixes",
+      "Reinstall dependencies",
+      "Final audit",
     ]);
     expect(result.fixedCount).toBe(3);
     expect(result.remainingCount).toBe(0);

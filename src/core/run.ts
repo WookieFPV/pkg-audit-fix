@@ -87,7 +87,7 @@ export async function runAuditFix(
   };
 
   const initialAuditStep = withLabel(
-    "initial audit",
+    "Initial audit",
     auditProcess.command,
     auditProcess.args,
     [0, 1],
@@ -126,7 +126,7 @@ export async function runAuditFix(
             : [0];
       await runStep(
         withLabel(
-          "remediation",
+          "Apply fixes",
           remediation.command,
           remediation.args,
           remediationAcceptedExitCodes,
@@ -139,7 +139,7 @@ export async function runAuditFix(
     if (postRemediation) {
       await runStep(
         withLabel(
-          "post-remediation install",
+          "Reinstall dependencies",
           postRemediation.command,
           postRemediation.args,
         ),
@@ -148,7 +148,7 @@ export async function runAuditFix(
   }
 
   const finalAuditStep = withLabel(
-    "final audit",
+    "Final audit",
     auditProcess.command,
     auditProcess.args,
     [0, 1],

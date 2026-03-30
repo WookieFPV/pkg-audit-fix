@@ -43,14 +43,18 @@ export function createStepLifecycleReporter(
   const useSpinner = options.isInteractive && !options.verbose;
   let activeSpinner: SpinnerLike | null = null;
 
+  const runningText = (label: string) => `${label}...`;
+  const successText = (label: string) => `${label} complete`;
+  const failureText = (label: string) => `${label} failed`;
+
   return {
     start(step) {
       if (!useSpinner) {
-        options.write(`Running: ${step.label}\n`);
+        options.write(`${runningText(step.label)}\n`);
         return;
       }
 
-      activeSpinner = createSpinner(`Running: ${step.label}`, options.color);
+      activeSpinner = createSpinner(runningText(step.label), options.color);
       activeSpinner.start();
     },
 
@@ -59,7 +63,7 @@ export function createStepLifecycleReporter(
         return;
       }
 
-      activeSpinner?.succeed(`Running: ${step.label}`);
+      activeSpinner?.succeed(successText(step.label));
       activeSpinner = null;
     },
 
@@ -68,7 +72,7 @@ export function createStepLifecycleReporter(
         return;
       }
 
-      activeSpinner?.fail(`Running: ${step.label}`);
+      activeSpinner?.fail(failureText(step.label));
       activeSpinner = null;
     },
   };

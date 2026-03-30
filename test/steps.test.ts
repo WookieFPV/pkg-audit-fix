@@ -15,10 +15,10 @@ describe("createStepLifecycleReporter", () => {
       },
     });
 
-    reporter.start({ label: "initial audit", command: ["pnpm", "audit"] });
-    reporter.complete({ label: "initial audit", command: ["pnpm", "audit"] });
+    reporter.start({ label: "Initial audit", command: ["pnpm", "audit"] });
+    reporter.complete({ label: "Initial audit", command: ["pnpm", "audit"] });
 
-    expect(writes).toEqual(["Running: initial audit\n"]);
+    expect(writes).toEqual(["Initial audit...\n"]);
   });
 
   it("uses a spinner for interactive non-verbose runs", () => {
@@ -36,11 +36,11 @@ describe("createStepLifecycleReporter", () => {
       createSpinner: vi.fn(() => spinner),
     });
 
-    reporter.start({ label: "final audit", command: ["npm", "audit"] });
-    reporter.complete({ label: "final audit", command: ["npm", "audit"] });
+    reporter.start({ label: "Final audit", command: ["npm", "audit"] });
+    reporter.complete({ label: "Final audit", command: ["npm", "audit"] });
 
     expect(spinner.start).toHaveBeenCalledOnce();
-    expect(spinner.succeed).toHaveBeenCalledWith("Running: final audit");
+    expect(spinner.succeed).toHaveBeenCalledWith("Final audit complete");
   });
 
   it("does not use a spinner in verbose mode", () => {
@@ -57,10 +57,10 @@ describe("createStepLifecycleReporter", () => {
       createSpinner,
     });
 
-    reporter.start({ label: "remediation", command: ["bun", "update"] });
-    reporter.fail({ label: "remediation", command: ["bun", "update"] });
+    reporter.start({ label: "Apply fixes", command: ["bun", "update"] });
+    reporter.fail({ label: "Apply fixes", command: ["bun", "update"] });
 
-    expect(writes).toEqual(["Running: remediation\n"]);
+    expect(writes).toEqual(["Apply fixes...\n"]);
     expect(createSpinner).not.toHaveBeenCalled();
   });
 });
