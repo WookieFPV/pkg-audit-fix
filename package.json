@@ -6,9 +6,20 @@
   "bin": {
     "pkg-audit-fix": "./dist/cli.mjs"
   },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package:check": "publint && npm pack --dry-run",
+    "ci": "biome check . && tsc --noEmit && vitest run && tsdown && publint"
+  },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs"
     }
   },
@@ -20,17 +31,6 @@
   "sideEffects": false,
   "engines": {
     "node": ">=20.19"
-  },
-  "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write .",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "package:check": "publint && npm pack --dry-run",
-    "ci": "biome check . && tsc --noEmit && vitest run && tsdown && publint"
   },
   "keywords": [
     "audit",
@@ -44,7 +44,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/example/pkg-audit-fix.git"
+    "url": "git+https://github.com/example/pkg-audit-fix.git"
   },
   "dependencies": {
     "package-manager-detector": "1.6.0"
@@ -52,7 +52,7 @@
   "devDependencies": {
     "@arethetypeswrong/core": "0.18.2",
     "@biomejs/biome": "2.4.10",
-    "@types/node": "^24.5.2",
+    "@types/node": "25.5.0",
     "publint": "0.3.18",
     "tsdown": "0.21.7",
     "typescript": "6.0.2",

@@ -1,0 +1,31 @@
+{
+  "advisories": {
+    "1001": {
+      "module_name": "brace-expansion",
+      "severity": "moderate",
+      "title": "Regular expression denial of service in brace-expansion",
+      "url": "https://github.com/advisories/GHSA-f886-m6hf-6m8v",
+      "cves": ["CVE-2026-33750"],
+      "github_advisory_id": "GHSA-F886-M6HF-6M8V",
+      "findings": [{ "version": "1.1.12" }, { "version": "2.0.2" }]
+    },
+    "1002": {
+      "module_name": "node-forge",
+      "severity": "critical",
+      "title": "Multiple critical advisories in node-forge",
+      "url": "https://github.com/advisories/GHSA-2328-f5f3-gj25",
+      "cves": ["CVE-2026-33891"],
+      "github_advisory_ids": ["GHSA-2328-F5F3-GJ25"],
+      "findings": [{ "version": "1.3.3" }]
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "low": 0,
+      "moderate": 2,
+      "high": 0,
+      "critical": 1,
+      "total": 3
+    }
+  }
+}

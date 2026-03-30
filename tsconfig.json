@@ -10,7 +10,6 @@
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "esModuleInterop": false,
     "forceConsistentCasingInFileNames": true,
     "types": [
       "node"
