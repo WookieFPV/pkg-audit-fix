@@ -30,7 +30,12 @@ export const pnpmAdapter: PackageManagerAdapter = {
   },
 
   buildRemediationProcess(context) {
-    const args = ["audit", "--json", "--fix", `--audit-level=${context.threshold}`];
+    const args = [
+      "audit",
+      "--json",
+      "--fix",
+      `--audit-level=${context.threshold}`,
+    ];
 
     if (context.scope === "prod") {
       args.push("--prod");

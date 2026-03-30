@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -53,7 +54,22 @@ interface CliOptions {
 }
 
 function readPackageVersion(): string {
-  return "0.1.0";
+  const packageJsonPath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "package.json",
+  );
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+    if (parsed && typeof parsed.version === "string") {
+      return parsed.version;
+    }
+  } catch {
+    // Fall through to the unknown marker if package.json is unreadable.
+  }
+
+  return "0.0.0-unknown";
 }
 
 function expectValue(argv: string[], index: number, flag: string): string {

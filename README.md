@@ -38,3 +38,12 @@ pkg-audit-fix --json
 npm install
 npm run ci
 ```
+
+## Releases
+
+```bash
+bun run changeset
+```
+
+- Commit the generated changeset file with the code change it describes.
+- The release workflow on `main` uses Changesets to open or update a release PR, then publishes to npm with the `NPM_TOKEN` repository secret.

@@ -40,4 +40,21 @@ describe("built CLI", () => {
     expect(result.stdout).toContain("pkg-audit-fix");
     expect(result.stdout).toContain("--audit-level");
   });
+
+  it("prints the package version from package.json", () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(root, "package.json"), "utf8"),
+    ) as { version: string };
+    const result = spawnSync(
+      nodeCommand,
+      [path.join(root, "dist", "cli.mjs"), "--version"],
+      {
+        cwd: root,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe(packageJson.version);
+  });
 });
