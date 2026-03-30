@@ -10,5 +10,8 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  attw: true,
+  attw: {
+    profile: "esm-only",
+    ignoreRules: ["no-resolution"],
+  },
 });
