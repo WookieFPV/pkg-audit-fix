@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
   pull-requests: write
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
@@ -17,6 +18,8 @@ jobs:
     timeout-minutes: 15
     env:
       CI: true
+      NPM_CONFIG_PROVENANCE: true
+
 
     steps:
       - uses: actions/checkout@v5
@@ -26,7 +29,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 20.19.0
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Set up Bun
@@ -52,13 +55,16 @@ jobs:
       - name: Validate package
         run: bun run package:check
 
-      - name: Create release PR or publish
+      - name: Create release PR
+        id: changesets
         uses: changesets/action@v1
         with:
           commit: "chore: release"
           title: "chore: release"
           version: bun run version-packages
-          publish: bun run release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: bun run release
