@@ -274,9 +274,6 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         onStepFail: (step) => {
           stepReporter.fail(step);
         },
-        onStepInfo: (step) => {
-          stepReporter.info(step);
-        },
       },
     },
   );

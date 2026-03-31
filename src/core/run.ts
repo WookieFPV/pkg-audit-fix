@@ -1,11 +1,7 @@
 import { getAdapter } from "../adapters/index.js";
 import { detectPackageManager } from "./detect-manager.js";
 import { type ExecFunction, executeStep } from "./exec.js";
-import {
-  diffFixedEntries,
-  formatCount,
-  groupFixedPackages,
-} from "./normalize.js";
+import { diffFixedEntries, groupFixedPackages } from "./normalize.js";
 import type {
   CommandResult,
   CommandStep,
@@ -93,17 +89,10 @@ export async function runAuditFix(
     before: NormalizedAuditSnapshot,
     after: NormalizedAuditSnapshot,
   ) => {
-    const stepFix = {
+    stepFixes.push({
       label,
       fixedCount: Math.max(before.total - after.total, 0),
       remainingCount: after.total,
-    };
-
-    stepFixes.push(stepFix);
-    dependencies.hooks?.onStepInfo?.({
-      label,
-      command: [],
-      detail: `fixed ${formatCount(stepFix.fixedCount)}`,
     });
   };
 

@@ -43,27 +43,6 @@ describe("createStepLifecycleReporter", () => {
     expect(spinner.succeed).toHaveBeenCalledWith("Final audit complete");
   });
 
-  it("writes step detail lines", () => {
-    const writes: string[] = [];
-    const reporter = createStepLifecycleReporter({
-      enabled: true,
-      color: true,
-      verbose: false,
-      isInteractive: true,
-      write: (text) => {
-        writes.push(text);
-      },
-    });
-
-    reporter.info({
-      label: "Apply fixes",
-      command: [],
-      detail: "fixed 3 vulnerabilities",
-    });
-
-    expect(writes).toEqual(["Apply fixes: fixed 3 vulnerabilities\n"]);
-  });
-
   it("does not use a spinner in verbose mode", () => {
     const writes: string[] = [];
     const createSpinner = vi.fn();

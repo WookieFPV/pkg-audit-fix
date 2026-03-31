@@ -20,23 +20,27 @@ function formatPackageLine(group: RunAuditFixResult["fixed"][number]): string {
   return `- ${versionLabel}: ${group.advisoryIds.join(", ")}`;
 }
 
+function formatStepFixSummary(result: RunAuditFixResult): string {
+  const parts = result.stepFixes.map((stepFix) => {
+    const label =
+      stepFix.label === "Apply fixes" ? "apply fixes" : "consolidate tree";
+    return `${label}: ${stepFix.fixedCount}`;
+  });
+
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
 export function formatTextSummary(result: RunAuditFixResult): string {
   const lines: string[] = [];
 
   if (result.initial.total === 0) {
     lines.push("chore(deps): no vulnerabilities found");
   } else if (result.fixedCount > 0) {
-    lines.push(`fix(deps): resolve ${formatCount(result.fixedCount)}`);
+    lines.push(
+      `fix(deps): resolve ${formatCount(result.fixedCount)}${formatStepFixSummary(result)}`,
+    );
   } else {
     lines.push("chore(deps): no vulnerabilities resolved");
-  }
-
-  if (result.stepFixes.length > 0) {
-    lines.push("");
-
-    for (const stepFix of result.stepFixes) {
-      lines.push(`${stepFix.label}: fixed ${formatCount(stepFix.fixedCount)}`);
-    }
   }
 
   if (result.fixedCount > 0 && result.fixed.length > 0) {

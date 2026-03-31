@@ -7,7 +7,6 @@ export interface StepLifecycleReporter {
   start(step: StepEvent): void;
   complete(step: StepEvent): void;
   fail(step: StepEvent): void;
-  info(step: StepEvent): void;
 }
 
 interface CreateStepLifecycleReporterOptions {
@@ -37,7 +36,6 @@ export function createStepLifecycleReporter(
       start() {},
       complete() {},
       fail() {},
-      info() {},
     };
   }
 
@@ -46,12 +44,7 @@ export function createStepLifecycleReporter(
   let activeSpinner: SpinnerLike | null = null;
 
   const runningText = (label: string) => `${label}...`;
-  const infoText = (step: StepEvent) =>
-    step.detail ? `${step.label}: ${step.detail}` : step.label;
-  const successText = (step: StepEvent) =>
-    step.detail
-      ? `${step.label} complete (${step.detail})`
-      : `${step.label} complete`;
+  const successText = (step: StepEvent) => `${step.label} complete`;
   const failureText = (label: string) => `${label} failed`;
 
   return {
@@ -81,10 +74,6 @@ export function createStepLifecycleReporter(
 
       activeSpinner?.fail(failureText(step.label));
       activeSpinner = null;
-    },
-
-    info(step) {
-      options.write(`${infoText(step)}\n`);
     },
   };
 }

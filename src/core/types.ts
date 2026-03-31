@@ -71,14 +71,12 @@ export interface RunAuditFixOptions {
 export interface StepEvent {
   label: string;
   command: readonly string[];
-  detail?: string | undefined;
 }
 
 export interface StepLifecycleHooks {
   onStepStart?: ((event: StepEvent) => void) | undefined;
   onStepComplete?: ((event: StepEvent) => void) | undefined;
   onStepFail?: ((event: StepEvent) => void) | undefined;
-  onStepInfo?: ((event: StepEvent) => void) | undefined;
 }
 
 export interface DetectionResult {

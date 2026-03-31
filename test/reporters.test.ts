@@ -54,10 +54,8 @@ describe("formatTextSummary", () => {
       status: "resolved-some",
     });
 
-    expect(summary).toContain("fix(deps): resolve 2 vulnerabilities");
-    expect(summary).toContain("Apply fixes: fixed 1 vulnerability");
     expect(summary).toContain(
-      "Consolidate dependency tree: fixed 1 vulnerability",
+      "fix(deps): resolve 2 vulnerabilities (apply fixes: 1, consolidate tree: 1)",
     );
     expect(summary).toContain(
       "- brace-expansion (1.1.12, 2.0.2): CVE-2026-33750, GHSA-F886-M6HF-6M8V",
