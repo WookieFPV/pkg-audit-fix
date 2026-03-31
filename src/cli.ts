@@ -287,9 +287,17 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   return result.exitCode;
 }
 
+function resolveExecutablePath(filePath: string): string {
+  try {
+    return fs.realpathSync(filePath);
+  } catch {
+    return path.resolve(filePath);
+  }
+}
+
 const invokedDirectly = process.argv[1]
-  ? path.resolve(process.argv[1]) ===
-    path.resolve(fileURLToPath(import.meta.url))
+  ? resolveExecutablePath(process.argv[1]) ===
+    resolveExecutablePath(fileURLToPath(import.meta.url))
   : false;
 
 if (invokedDirectly) {

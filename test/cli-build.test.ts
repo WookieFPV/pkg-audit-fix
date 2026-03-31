@@ -41,6 +41,20 @@ describe("built CLI", () => {
     expect(result.stdout).toContain("--audit-level");
   });
 
+  it("runs when invoked through a symlinked bin path", () => {
+    const symlinkPath = path.join(root, "dist", "pkg-audit-fix-test-bin");
+    fs.rmSync(symlinkPath, { force: true });
+    fs.symlinkSync(path.join(root, "dist", "cli.mjs"), symlinkPath);
+
+    const result = spawnSync(symlinkPath, ["--help"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("pkg-audit-fix");
+  });
+
   it("prints the package version from package.json", () => {
     const packageJson = JSON.parse(
       fs.readFileSync(path.join(root, "package.json"), "utf8"),
