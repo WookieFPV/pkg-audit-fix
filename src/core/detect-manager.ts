@@ -1,8 +1,8 @@
-import { detect, getUserAgent } from "package-manager-detector/detect";
 import type {
   AgentName as DetectedAgentName,
   DetectResult as PackageManagerDetectResult,
 } from "package-manager-detector";
+import { detect, getUserAgent } from "package-manager-detector/detect";
 
 import {
   type DetectionResult,
