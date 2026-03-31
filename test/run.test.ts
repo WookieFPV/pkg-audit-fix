@@ -36,6 +36,7 @@ describe("runAuditFix", () => {
     );
 
     expect(steps).toEqual(["Initial audit", "Final audit"]);
+    expect(result.stepFixes).toEqual([]);
     expect(result.fixedCount).toBe(0);
     expect(result.remainingCount).toBe(3);
     expect(result.exitCode).toBe(2);
@@ -90,6 +91,13 @@ describe("runAuditFix", () => {
     expect(result.exitCode).toBe(0);
     expect(result.status).toBe("resolved-some");
     expect(result.dedupeRan).toBe(false);
+    expect(result.stepFixes).toEqual([
+      {
+        label: "Apply fixes",
+        fixedCount: 3,
+        remainingCount: 0,
+      },
+    ]);
   });
 
   it("short-circuits when the initial audit is already clean", async () => {
@@ -122,6 +130,7 @@ describe("runAuditFix", () => {
     expect(result.exitCode).toBe(0);
     expect(result.status).toBe("clean");
     expect(result.dedupeRan).toBe(false);
+    expect(result.stepFixes).toEqual([]);
   });
 
   it("runs a dedupe pass in auto mode when vulnerabilities remain after fixes", async () => {
@@ -173,6 +182,18 @@ describe("runAuditFix", () => {
     ]);
     expect(result.dedupeRan).toBe(true);
     expect(result.exitCode).toBe(0);
+    expect(result.stepFixes).toEqual([
+      {
+        label: "Apply fixes",
+        fixedCount: 0,
+        remainingCount: 3,
+      },
+      {
+        label: "Consolidate dependency tree",
+        fixedCount: 3,
+        remainingCount: 0,
+      },
+    ]);
   });
 
   it("skips dedupe in auto mode when fixes already clear the audit", async () => {
@@ -218,6 +239,13 @@ describe("runAuditFix", () => {
     ]);
     expect(result.dedupeRan).toBe(false);
     expect(result.remainingCount).toBe(0);
+    expect(result.stepFixes).toEqual([
+      {
+        label: "Apply fixes",
+        fixedCount: 2,
+        remainingCount: 0,
+      },
+    ]);
   });
 
   it("does not attempt dedupe for managers without dedupe support", async () => {
@@ -262,5 +290,12 @@ describe("runAuditFix", () => {
       "Recheck after fixes",
     ]);
     expect(result.dedupeRan).toBe(false);
+    expect(result.stepFixes).toEqual([
+      {
+        label: "Apply fixes",
+        fixedCount: 2,
+        remainingCount: 0,
+      },
+    ]);
   });
 });

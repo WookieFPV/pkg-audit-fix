@@ -29,6 +29,18 @@ describe("formatTextSummary", () => {
         counts: { low: 0, moderate: 1, high: 0, critical: 0, total: 1 },
         entries: [],
       },
+      stepFixes: [
+        {
+          label: "Apply fixes",
+          fixedCount: 1,
+          remainingCount: 2,
+        },
+        {
+          label: "Consolidate dependency tree",
+          fixedCount: 1,
+          remainingCount: 1,
+        },
+      ],
       fixedCount: 2,
       remainingCount: 1,
       fixed: [
@@ -43,6 +55,10 @@ describe("formatTextSummary", () => {
     });
 
     expect(summary).toContain("fix(deps): resolve 2 vulnerabilities");
+    expect(summary).toContain("Apply fixes: fixed 1 vulnerability");
+    expect(summary).toContain(
+      "Consolidate dependency tree: fixed 1 vulnerability",
+    );
     expect(summary).toContain(
       "- brace-expansion (1.1.12, 2.0.2): CVE-2026-33750, GHSA-F886-M6HF-6M8V",
     );
@@ -74,6 +90,7 @@ describe("formatTextSummary", () => {
         counts: { low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
         entries: [],
       },
+      stepFixes: [],
       fixedCount: 0,
       remainingCount: 0,
       fixed: [],

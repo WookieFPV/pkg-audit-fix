@@ -71,12 +71,14 @@ export interface RunAuditFixOptions {
 export interface StepEvent {
   label: string;
   command: readonly string[];
+  detail?: string | undefined;
 }
 
 export interface StepLifecycleHooks {
   onStepStart?: ((event: StepEvent) => void) | undefined;
   onStepComplete?: ((event: StepEvent) => void) | undefined;
   onStepFail?: ((event: StepEvent) => void) | undefined;
+  onStepInfo?: ((event: StepEvent) => void) | undefined;
 }
 
 export interface DetectionResult {
@@ -92,6 +94,12 @@ export interface FixedPackageGroup {
   url?: string | undefined;
 }
 
+export interface StepFixResult {
+  label: "Apply fixes" | "Consolidate dependency tree";
+  fixedCount: number;
+  remainingCount: number;
+}
+
 export interface RunAuditFixResult {
   manager: PackageManager;
   detectionSource: DetectionSource;
@@ -102,6 +110,7 @@ export interface RunAuditFixResult {
   dryRun: boolean;
   initial: NormalizedAuditSnapshot;
   final: NormalizedAuditSnapshot;
+  stepFixes: StepFixResult[];
   fixedCount: number;
   remainingCount: number;
   fixed: FixedPackageGroup[];
@@ -118,6 +127,7 @@ export interface JsonSummary {
   dedupeRan: boolean;
   dryRun: boolean;
   status: RunAuditFixResult["status"];
+  stepFixes: StepFixResult[];
   fixedCount: number;
   remainingCount: number;
   exitCode: 0 | 2;

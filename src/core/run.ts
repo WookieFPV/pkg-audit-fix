@@ -1,7 +1,11 @@
 import { getAdapter } from "../adapters/index.js";
 import { detectPackageManager } from "./detect-manager.js";
 import { type ExecFunction, executeStep } from "./exec.js";
-import { diffFixedEntries, groupFixedPackages } from "./normalize.js";
+import {
+  diffFixedEntries,
+  formatCount,
+  groupFixedPackages,
+} from "./normalize.js";
 import type {
   CommandResult,
   CommandStep,
@@ -9,6 +13,7 @@ import type {
   ProcessSpec,
   RunAuditFixOptions,
   RunAuditFixResult,
+  StepFixResult,
   StepLifecycleHooks,
 } from "./types.js";
 import { CommandExecutionError } from "./types.js";
@@ -81,6 +86,26 @@ export async function runAuditFix(
     scope: options.scope,
   };
   const auditProcess = adapter.buildAuditProcess(context);
+  const stepFixes: StepFixResult[] = [];
+
+  const recordStepFix = (
+    label: StepFixResult["label"],
+    before: NormalizedAuditSnapshot,
+    after: NormalizedAuditSnapshot,
+  ) => {
+    const stepFix = {
+      label,
+      fixedCount: Math.max(before.total - after.total, 0),
+      remainingCount: after.total,
+    };
+
+    stepFixes.push(stepFix);
+    dependencies.hooks?.onStepInfo?.({
+      label,
+      command: [],
+      detail: `fixed ${formatCount(stepFix.fixedCount)}`,
+    });
+  };
 
   const runStep = async (step: CommandStep) => {
     dependencies.hooks?.onStepStart?.({
@@ -129,6 +154,7 @@ export async function runAuditFix(
       dryRun: options.dryRun,
       initial,
       final: initial,
+      stepFixes,
       fixedCount: 0,
       remainingCount: 0,
       fixed: [],
@@ -137,10 +163,12 @@ export async function runAuditFix(
     };
   }
 
+  let remediationRan = false;
   if (!options.dryRun) {
     const remediation = adapter.buildRemediationProcess(context);
 
     if (remediation) {
+      remediationRan = true;
       const remediationAcceptedExitCodes =
         remediation.command === "npm" && remediation.args[0] === "audit"
           ? [0, 1]
@@ -183,6 +211,10 @@ export async function runAuditFix(
     final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
       adapter.parseAudit(finalAuditResult.stdout, context),
     );
+
+    if (remediationRan) {
+      recordStepFix("Apply fixes", initial, final);
+    }
   } else {
     const postFixAuditStep = withLabel(
       "Recheck after fixes",
@@ -196,6 +228,11 @@ export async function runAuditFix(
       postFixAuditResult,
       () => adapter.parseAudit(postFixAuditResult.stdout, context),
     );
+
+    if (remediationRan) {
+      recordStepFix("Apply fixes", initial, postFixSnapshot);
+    }
+
     const dedupeProcess = adapter.buildDedupeProcess(context);
 
     if (
@@ -225,6 +262,7 @@ export async function runAuditFix(
       final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
         adapter.parseAudit(finalAuditResult.stdout, context),
       );
+      recordStepFix("Consolidate dependency tree", postFixSnapshot, final);
     } else {
       final = postFixSnapshot;
     }
@@ -244,6 +282,7 @@ export async function runAuditFix(
     dryRun: options.dryRun,
     initial,
     final,
+    stepFixes,
     fixedCount,
     remainingCount,
     fixed,

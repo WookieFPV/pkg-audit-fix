@@ -13,6 +13,7 @@ export type {
   RunAuditFixOptions,
   RunAuditFixResult,
   Severity,
+  StepFixResult,
   VulnerabilityCounts,
 } from "./core/types.js";
 export { toJsonSummary } from "./reporters/json.js";
