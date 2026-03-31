@@ -58,6 +58,7 @@
     "@biomejs/biome": "2.4.10",
     "@changesets/cli": "2.30.0",
     "@types/node": "25.5.0",
+    "lefthook": "2.1.4",
     "publint": "0.3.18",
     "tsdown": "0.21.7",
     "typescript": "6.0.2",
