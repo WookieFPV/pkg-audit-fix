@@ -1,4 +1,8 @@
 import { detect, getUserAgent } from "package-manager-detector/detect";
+import type {
+  AgentName as DetectedAgentName,
+  DetectResult as PackageManagerDetectResult,
+} from "package-manager-detector";
 
 import {
   type DetectionResult,
@@ -13,18 +17,13 @@ const DETECTION_STRATEGIES = [
   "devEngines-field",
 ] as const;
 
-function coerceManager(value: unknown): DetectionResult["manager"] | null {
-  if (typeof value === "string") {
-    if (value === "pnpm" || value === "npm" || value === "bun") {
-      return value;
-    }
+function coerceManager(
+  value: DetectedAgentName | PackageManagerDetectResult | null | undefined,
+): DetectionResult["manager"] | null {
+  const manager = typeof value === "string" ? value : value?.name;
 
-    return null;
-  }
-
-  if (typeof value === "object" && value !== null && "name" in value) {
-    const name = Reflect.get(value, "name");
-    return coerceManager(name);
+  if (manager === "pnpm" || manager === "npm" || manager === "bun") {
+    return manager;
   }
 
   return null;
@@ -50,7 +49,20 @@ export async function detectPackageManager(
     };
   }
 
-  let userAgent: unknown = null;
+  const detected = await detectFn({
+    cwd: input.cwd,
+    strategies: [...DETECTION_STRATEGIES],
+  }).catch(() => null);
+  const detectedManager = coerceManager(detected);
+
+  if (detectedManager) {
+    return {
+      manager: detectedManager,
+      source: "filesystem",
+    };
+  }
+
+  let userAgent: DetectedAgentName | null = null;
 
   try {
     userAgent = await Promise.resolve(getUserAgentFn());
@@ -64,19 +76,6 @@ export async function detectPackageManager(
     return {
       manager: userAgentManager,
       source: "user-agent",
-    };
-  }
-
-  const detected = await detectFn({
-    cwd: input.cwd,
-    strategies: [...DETECTION_STRATEGIES],
-  }).catch(() => null);
-  const detectedManager = coerceManager(detected);
-
-  if (detectedManager) {
-    return {
-      manager: detectedManager,
-      source: "filesystem",
     };
   }
 

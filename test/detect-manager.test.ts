@@ -23,8 +23,8 @@ describe("detectPackageManager", () => {
     expect(getUserAgentFn).not.toHaveBeenCalled();
   });
 
-  it("uses the current user agent before filesystem detection", async () => {
-    const detectFn = vi.fn();
+  it("prefers filesystem detection over the invoking user agent", async () => {
+    const detectFn = vi.fn().mockResolvedValue({ name: "bun", agent: "bun" });
     const getUserAgentFn = vi.fn().mockResolvedValue({ name: "npm" });
     const result = await detectPackageManager(
       {
@@ -37,12 +37,30 @@ describe("detectPackageManager", () => {
       },
     );
 
-    expect(result).toEqual({ manager: "npm", source: "user-agent" });
-    expect(detectFn).not.toHaveBeenCalled();
+    expect(result).toEqual({ manager: "bun", source: "filesystem" });
+    expect(detectFn).toHaveBeenCalledOnce();
   });
 
-  it("falls back to filesystem detection", async () => {
-    const detectFn = vi.fn().mockResolvedValue({ name: "bun" });
+  it("falls back to the current user agent when filesystem detection fails", async () => {
+    const detectFn = vi.fn().mockResolvedValue(null);
+    const getUserAgentFn = vi.fn().mockResolvedValue("npm");
+    const result = await detectPackageManager(
+      {
+        cwd: "/tmp/project",
+        override: "auto",
+      },
+      {
+        detectFn,
+        getUserAgentFn,
+      },
+    );
+
+    expect(result).toEqual({ manager: "npm", source: "user-agent" });
+    expect(detectFn).toHaveBeenCalledOnce();
+  });
+
+  it("uses filesystem detection when no user agent is available", async () => {
+    const detectFn = vi.fn().mockResolvedValue({ name: "bun", agent: "bun" });
     const getUserAgentFn = vi.fn().mockResolvedValue(null);
     const result = await detectPackageManager(
       {
