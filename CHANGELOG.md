@@ -1,5 +1,11 @@
 # pkg-audit-fix
 
+## 0.1.3
+
+### Patch Changes
+
+- e72acfa: testing of automated trusted publishing workflow
+
 ## 0.1.2
 
 ### Patch Changes
