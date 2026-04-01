@@ -23,6 +23,7 @@ pkg-audit-fix --json
 
 - Detects the active package manager automatically, with `--manager` available as an override.
 - Audits all dependencies by default. Use `--prod` or `--dev` to narrow the audit scope.
+- Uses `low` as the default advisory threshold. Override it with `--audit-level`.
 - Buffers package-manager output unless a step fails or `--verbose` is enabled.
 - Prints a commit-message-style summary with grouped advisories and a final remaining count.
 
