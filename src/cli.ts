@@ -33,6 +33,7 @@ Options:
   --dedupe <auto|always|never>         Run a dedupe pass after fixes when supported, defaults to auto
   --dry-run                            Run initial and final audits only
   --json                               Emit a machine-readable final summary
+  -d, --debug                          Print detected package manager and enable command echoing
   --show-commands                      Print each package-manager command before it runs
   --verbose                            Stream subprocess output during successful runs
   --no-color                           Disable ANSI output
@@ -48,6 +49,7 @@ interface CliOptions {
   dedupe: DedupeMode;
   dryRun: boolean;
   json: boolean;
+  debug: boolean;
   showCommands: boolean;
   verbose: boolean;
   color: boolean;
@@ -128,6 +130,7 @@ function parseArgs(argv: string[]): CliOptions {
     dedupe: "auto",
     dryRun: false,
     json: false,
+    debug: false,
     showCommands: false,
     verbose: false,
     color: !process.env.NO_COLOR,
@@ -176,6 +179,11 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--json") {
       options.json = true;
+      continue;
+    }
+
+    if (arg === "--debug" || arg === "-d") {
+      options.debug = true;
       continue;
     }
 
@@ -252,15 +260,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     process.env.NO_COLOR = "1";
   }
 
+  const showCommands = options.showCommands || options.verbose || options.debug;
+  const diagnosticsWrite = (text: string) =>
+    options.json ? process.stderr.write(text) : process.stdout.write(text);
   const stepReporter = createStepLifecycleReporter({
-    enabled: !options.json,
+    enabled: !options.json || options.debug,
     color: options.color,
     verbose: options.verbose,
-    showCommands: options.showCommands || options.verbose,
+    showCommands,
     isInteractive: Boolean(process.stdout.isTTY),
-    write: (text) => {
-      process.stdout.write(text);
-    },
+    write: diagnosticsWrite,
   });
 
   const result = await runAuditFix(
@@ -284,6 +293,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         onStepFail: (step) => {
           stepReporter.fail(step);
         },
+      },
+      onManagerDetected: (detection) => {
+        if (!options.debug) {
+          return;
+        }
+
+        diagnosticsWrite(`Detected package manager: ${detection.manager}\n`);
       },
     },
   );

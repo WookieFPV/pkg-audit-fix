@@ -5,6 +5,7 @@ import { diffFixedEntries, groupFixedPackages } from "./normalize.js";
 import type {
   CommandResult,
   CommandStep,
+  DetectionResult,
   NormalizedAuditSnapshot,
   ProcessSpec,
   RunAuditFixOptions,
@@ -63,6 +64,7 @@ export async function runAuditFix(
     detectManager?: typeof detectPackageManager | undefined;
     exec?: ExecFunction | undefined;
     hooks?: StepLifecycleHooks | undefined;
+    onManagerDetected?: ((detection: DetectionResult) => void) | undefined;
   } = {},
 ): Promise<RunAuditFixResult> {
   const detectManager = dependencies.detectManager ?? detectPackageManager;
@@ -71,6 +73,7 @@ export async function runAuditFix(
     cwd: options.cwd,
     override: options.manager,
   });
+  dependencies.onManagerDetected?.(detection);
   const adapter = getAdapter(detection.agent);
 
   if (!adapter) {

@@ -132,4 +132,129 @@ describe("cli defaults", () => {
       stdoutWrite.mockRestore();
     }
   });
+
+  it("supports -d as an alias for --debug and prints the detected package manager", async () => {
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const cli = await import("../src/cli.js");
+
+    try {
+      const exitCode = await cli.main(["-d"]);
+      const [, dependencies] = runAuditFix.mock.calls[0] as [
+        unknown,
+        {
+          onManagerDetected: (detection: {
+            manager: string;
+            agent: string;
+            source: string;
+          }) => void;
+          hooks: {
+            onStepStart: (step: { label: string; command: string[] }) => void;
+          };
+        },
+      ];
+
+      dependencies.onManagerDetected({
+        manager: "pnpm",
+        agent: "pnpm",
+        source: "filesystem",
+      });
+      dependencies.hooks.onStepStart({
+        label: "Initial audit",
+        command: ["pnpm", "audit", "--json"],
+      });
+
+      expect(exitCode).toBe(0);
+      expect(stdoutWrite).toHaveBeenCalledWith(
+        "Detected package manager: pnpm\n",
+      );
+      expect(stdoutWrite).toHaveBeenCalledWith("$ pnpm audit --json\n");
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("writes debug output to stderr when --json is enabled", async () => {
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const stderrWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const cli = await import("../src/cli.js");
+
+    try {
+      const exitCode = await cli.main(["--json", "--debug"]);
+      const [, dependencies] = runAuditFix.mock.calls[0] as [
+        unknown,
+        {
+          onManagerDetected: (detection: {
+            manager: string;
+            agent: string;
+            source: string;
+          }) => void;
+          hooks: {
+            onStepStart: (step: { label: string; command: string[] }) => void;
+          };
+        },
+      ];
+
+      dependencies.onManagerDetected({
+        manager: "pnpm",
+        agent: "pnpm",
+        source: "filesystem",
+      });
+      dependencies.hooks.onStepStart({
+        label: "Initial audit",
+        command: ["pnpm", "audit", "--json"],
+      });
+
+      expect(exitCode).toBe(0);
+      expect(stderrWrite).toHaveBeenCalledWith(
+        "Detected package manager: pnpm\n",
+      );
+      expect(stderrWrite).toHaveBeenCalledWith("$ pnpm audit --json\n");
+      expect(stdoutWrite).toHaveBeenCalledWith(
+        `${JSON.stringify(
+          {
+            manager: "pnpm",
+            detectionSource: "filesystem",
+            threshold: "low",
+            scope: "all",
+            dedupe: "auto",
+            dedupeRan: false,
+            dryRun: false,
+            status: "clean",
+            stepFixes: [],
+            fixedCount: 0,
+            remainingCount: 0,
+            exitCode: 0,
+            fixed: [],
+            initial: {
+              manager: "pnpm",
+              threshold: "low",
+              scope: "all",
+              total: 0,
+              counts: { low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+              entries: [],
+            },
+            final: {
+              manager: "pnpm",
+              threshold: "low",
+              scope: "all",
+              total: 0,
+              counts: { low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+              entries: [],
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    } finally {
+      stdoutWrite.mockRestore();
+      stderrWrite.mockRestore();
+    }
+  });
 });

@@ -14,6 +14,7 @@ npm install -g pkg-audit-fix
 pkg-audit-fix
 pkg-audit-fix --cwd ./app
 pkg-audit-fix --manager pnpm --verbose
+pkg-audit-fix --debug
 pkg-audit-fix --show-commands
 pkg-audit-fix --prod
 pkg-audit-fix --dev --audit-level high
@@ -25,6 +26,7 @@ pkg-audit-fix --json
 - Detects the active package manager automatically, with `--manager` available as an override.
 - Audits all dependencies by default. Use `--prod` or `--dev` to narrow the audit scope.
 - Uses `low` as the default advisory threshold. Override it with `--audit-level`.
+- Use `--debug` or `-d` to print the detected package manager and enable command echoing. When combined with `--json`, debug output is written to `stderr`.
 - Use `--show-commands` to print each underlying package-manager command. `--verbose` implies the same command echoing and also streams subprocess output.
 - Buffers package-manager output unless a step fails or `--verbose` is enabled.
 - Prints a commit-message-style summary with grouped advisories and a final remaining count.
