@@ -33,6 +33,7 @@ Options:
   --dedupe <auto|always|never>         Run a dedupe pass after fixes when supported, defaults to auto
   --dry-run                            Run initial and final audits only
   --json                               Emit a machine-readable final summary
+  --show-commands                      Print each package-manager command before it runs
   --verbose                            Stream subprocess output during successful runs
   --no-color                           Disable ANSI output
   -v, --version                        Print the package version
@@ -47,6 +48,7 @@ interface CliOptions {
   dedupe: DedupeMode;
   dryRun: boolean;
   json: boolean;
+  showCommands: boolean;
   verbose: boolean;
   color: boolean;
   help: boolean;
@@ -126,6 +128,7 @@ function parseArgs(argv: string[]): CliOptions {
     dedupe: "auto",
     dryRun: false,
     json: false,
+    showCommands: false,
     verbose: false,
     color: !process.env.NO_COLOR,
     help: false,
@@ -173,6 +176,11 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--json") {
       options.json = true;
+      continue;
+    }
+
+    if (arg === "--show-commands") {
+      options.showCommands = true;
       continue;
     }
 
@@ -248,6 +256,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     enabled: !options.json,
     color: options.color,
     verbose: options.verbose,
+    showCommands: options.showCommands || options.verbose,
     isInteractive: Boolean(process.stdout.isTTY),
     write: (text) => {
       process.stdout.write(text);

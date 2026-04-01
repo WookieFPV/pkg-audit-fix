@@ -102,4 +102,34 @@ describe("cli defaults", () => {
       stdoutWrite.mockRestore();
     }
   });
+
+  it("prints commands when --show-commands is enabled", async () => {
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const cli = await import("../src/cli.js");
+
+    try {
+      const exitCode = await cli.main(["--show-commands"]);
+      const [, dependencies] = runAuditFix.mock.calls[0] as [
+        unknown,
+        {
+          hooks: {
+            onStepStart: (step: { label: string; command: string[] }) => void;
+          };
+        },
+      ];
+
+      dependencies.hooks.onStepStart({
+        label: "Initial audit",
+        command: ["pnpm", "audit", "--json"],
+      });
+
+      expect(exitCode).toBe(0);
+      expect(stdoutWrite).toHaveBeenCalledWith("$ pnpm audit --json\n");
+      expect(stdoutWrite).toHaveBeenCalledWith("Initial audit...\n");
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+  });
 });

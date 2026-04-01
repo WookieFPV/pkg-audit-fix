@@ -13,6 +13,7 @@ interface CreateStepLifecycleReporterOptions {
   enabled: boolean;
   color: boolean;
   verbose: boolean;
+  showCommands: boolean;
   isInteractive: boolean;
   write: (text: string) => void;
   createSpinner?: ((text: string, color: boolean) => SpinnerLike) | undefined;
@@ -26,6 +27,16 @@ interface SpinnerLike {
 
 function defaultCreateSpinner(text: string, color: boolean): SpinnerInstance {
   return new Spinner(text, { colors: color });
+}
+
+function formatShellWord(word: string): string {
+  return /^[A-Za-z0-9_./:=+-]+$/.test(word)
+    ? word
+    : `'${word.replaceAll("'", `'"'"'`)}'`;
+}
+
+function formatCommand(command: readonly string[]): string {
+  return command.map(formatShellWord).join(" ");
 }
 
 export function createStepLifecycleReporter(
@@ -49,6 +60,10 @@ export function createStepLifecycleReporter(
 
   return {
     start(step) {
+      if (options.showCommands) {
+        options.write(`$ ${formatCommand(step.command)}\n`);
+      }
+
       if (!useSpinner) {
         options.write(`${runningText(step.label)}\n`);
         return;
