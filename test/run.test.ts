@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runAuditFix } from "../src/core/run.js";
+import { createAuditSession, runAuditFix } from "../src/core/run.js";
 import { readFixture } from "./helpers.js";
 
 describe("runAuditFix", () => {
@@ -420,5 +420,137 @@ describe("runAuditFix", () => {
         remainingCount: 0,
       },
     ]);
+  });
+});
+
+describe("createAuditSession", () => {
+  it("tracks manual audit refreshes without creating step fix entries", async () => {
+    const steps: string[] = [];
+    const stdoutByStep: Record<string, string> = {
+      "Initial audit": readFixture("npm", "before.json"),
+      "Refresh audit": readFixture("npm", "after.json"),
+    };
+    const exec = vi.fn(async (step) => {
+      steps.push(step.label);
+
+      return {
+        command: step.command,
+        args: step.args,
+        stdout: stdoutByStep[step.label] ?? "",
+        stderr: "",
+        exitCode: 0,
+        signal: null,
+      };
+    });
+
+    const session = await createAuditSession(
+      {
+        cwd: "/tmp/project",
+        manager: "npm",
+        scope: "all",
+        threshold: "moderate",
+        dedupe: "auto",
+        dryRun: false,
+        verbose: false,
+      },
+      {
+        detectManager: async () => ({
+          manager: "npm",
+          agent: "npm",
+          source: "override",
+        }),
+        exec,
+      },
+    );
+
+    const outcome = await session.auditCurrent("Refresh audit");
+    const result = session.toResult({ dedupe: "auto", dryRun: false });
+
+    expect(steps).toEqual(["Initial audit", "Refresh audit"]);
+    expect(outcome.fixedCount).toBe(2);
+    expect(outcome.remainingCount).toBe(0);
+    expect(result.stepFixes).toEqual([]);
+    expect(result.fixedCount).toBe(2);
+    expect(result.remainingCount).toBe(0);
+    expect(result.status).toBe("resolved-some");
+  });
+
+  it("allows repeated manual fix actions and accumulates their impact", async () => {
+    const steps: string[] = [];
+    const stdoutByStep: Record<string, string> = {
+      "Initial audit": readFixture("pnpm", "before.json"),
+      "Apply fixes": readFixture("pnpm", "before.json"),
+      "Reinstall dependencies": "",
+      "Recheck after fixes": readFixture("pnpm", "before.json"),
+      "Consolidate dependency tree": "",
+      "Recheck after dedupe": readFixture("pnpm", "after.json"),
+    };
+    const exec = vi.fn(async (step) => {
+      steps.push(step.label);
+
+      return {
+        command: step.command,
+        args: step.args,
+        stdout: stdoutByStep[step.label] ?? "",
+        stderr: "",
+        exitCode: 0,
+        signal: null,
+      };
+    });
+
+    const session = await createAuditSession(
+      {
+        cwd: "/tmp/project",
+        manager: "pnpm",
+        scope: "prod",
+        threshold: "moderate",
+        dedupe: "auto",
+        dryRun: false,
+        verbose: false,
+      },
+      {
+        detectManager: async () => ({
+          manager: "pnpm",
+          agent: "pnpm",
+          source: "override",
+        }),
+        exec,
+      },
+    );
+
+    const fixOutcome = await session.applyFixes({
+      auditLabel: "Recheck after fixes",
+    });
+    const dedupeOutcome = await session.dedupe({
+      auditLabel: "Recheck after dedupe",
+    });
+    const result = session.toResult({ dedupe: "auto", dryRun: false });
+
+    expect(steps).toEqual([
+      "Initial audit",
+      "Apply fixes",
+      "Reinstall dependencies",
+      "Recheck after fixes",
+      "Consolidate dependency tree",
+      "Recheck after dedupe",
+    ]);
+    expect(fixOutcome).not.toBeNull();
+    expect(dedupeOutcome).not.toBeNull();
+    expect(fixOutcome?.fixedCount).toBe(0);
+    expect(dedupeOutcome?.fixedCount).toBe(3);
+    expect(result.stepFixes).toEqual([
+      {
+        label: "Apply fixes",
+        fixedCount: 0,
+        remainingCount: 3,
+      },
+      {
+        label: "Consolidate dependency tree",
+        fixedCount: 3,
+        remainingCount: 0,
+      },
+    ]);
+    expect(result.fixedCount).toBe(3);
+    expect(result.remainingCount).toBe(0);
   });
 });

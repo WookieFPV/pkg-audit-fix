@@ -2,6 +2,7 @@ import { formatCount } from "../core/normalize.js";
 import {
   CommandExecutionError,
   ManagerDetectionError,
+  type NormalizedAuditSnapshot,
   type RunAuditFixResult,
 } from "../core/types.js";
 
@@ -21,11 +22,17 @@ function formatPackageLine(group: RunAuditFixResult["fixed"][number]): string {
 }
 
 function formatStepFixSummary(result: RunAuditFixResult): string {
-  const parts = result.stepFixes.map((stepFix) => {
+  const totals = new Map<string, number>();
+
+  for (const stepFix of result.stepFixes) {
     const label =
       stepFix.label === "Apply fixes" ? "apply fixes" : "consolidate tree";
-    return `${label}: ${stepFix.fixedCount}`;
-  });
+    totals.set(label, (totals.get(label) ?? 0) + stepFix.fixedCount);
+  }
+
+  const parts = [...totals.entries()].map(
+    ([label, fixedCount]) => `${label}: ${fixedCount}`,
+  );
 
   return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }
@@ -53,6 +60,30 @@ export function formatTextSummary(result: RunAuditFixResult): string {
 
   lines.push("");
   lines.push(`remaining: ${formatCount(result.remainingCount)}`);
+
+  return lines.join("\n");
+}
+
+function formatCurrentVulnerabilityLine(
+  entry: NormalizedAuditSnapshot["entries"][number],
+): string {
+  const advisoryIds =
+    entry.advisoryIds.length > 0 ? `: ${entry.advisoryIds.join(", ")}` : "";
+  return `- [${entry.severity}] ${entry.packageName}@${entry.installedVersion}${advisoryIds}`;
+}
+
+export function formatVulnerabilityList(
+  snapshot: NormalizedAuditSnapshot,
+): string {
+  if (snapshot.total === 0) {
+    return "No vulnerabilities remaining.";
+  }
+
+  const lines = [`current: ${formatCount(snapshot.total)}`, ""];
+
+  for (const entry of snapshot.entries) {
+    lines.push(formatCurrentVulnerabilityLine(entry));
+  }
 
   return lines.join("\n");
 }

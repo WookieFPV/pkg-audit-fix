@@ -5,10 +5,12 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { runAuditFix } from "./core/run.js";
+import { formatCount } from "./core/normalize.js";
+import { createAuditSession, runAuditFix } from "./core/run.js";
 import {
   type AuditLevel,
   type AuditScope,
+  type AuditSession,
   CliUsageError,
   type DedupeMode,
   ManagerDetectionError,
@@ -16,7 +18,11 @@ import {
 } from "./core/types.js";
 import { toJsonSummary } from "./reporters/json.js";
 import { createStepLifecycleReporter } from "./reporters/steps.js";
-import { formatFailure, formatTextSummary } from "./reporters/text.js";
+import {
+  formatFailure,
+  formatTextSummary,
+  formatVulnerabilityList,
+} from "./reporters/text.js";
 
 const HELP_TEXT = `pkg-audit-fix
 
@@ -32,6 +38,7 @@ Options:
                                        Minimum advisory level, defaults to low
   --dedupe <auto|always|never>         Run a dedupe pass after fixes when supported, defaults to auto
   --dry-run                            Run initial and final audits only
+  --manual                             Run an interactive manual remediation loop
   --json                               Emit a machine-readable final summary
   -d, --debug                          Print detected package manager and enable command echoing
   --show-commands                      Print each package-manager command before it runs
@@ -48,6 +55,7 @@ interface CliOptions {
   threshold: AuditLevel;
   dedupe: DedupeMode;
   dryRun: boolean;
+  manual: boolean;
   json: boolean;
   debug: boolean;
   showCommands: boolean;
@@ -55,6 +63,34 @@ interface CliOptions {
   color: boolean;
   help: boolean;
   version: boolean;
+}
+
+type ManualActionId =
+  | "audit-fix"
+  | "dedupe"
+  | "print-result"
+  | "list-vulnerabilities"
+  | "finish";
+
+interface ManualMenuOption {
+  key: string;
+  label: string;
+  action: ManualActionId;
+}
+
+interface CliDependencies {
+  runAuditFixImpl?: typeof runAuditFix;
+  createAuditSessionImpl?: typeof createAuditSession;
+  selectManualAction?:
+    | ((context: {
+        supportsRemediation: boolean;
+        supportsDedupe: boolean;
+        write: (text: string) => void;
+      }) => Promise<string>)
+    | undefined;
+  stdout?: Pick<typeof process.stdout, "write" | "isTTY"> | undefined;
+  stderr?: Pick<typeof process.stderr, "write"> | undefined;
+  stdin?: Pick<typeof process.stdin, "isTTY"> | undefined;
 }
 
 function readPackageVersion(): string {
@@ -129,6 +165,7 @@ function parseArgs(argv: string[]): CliOptions {
     threshold: "low",
     dedupe: "auto",
     dryRun: false,
+    manual: false,
     json: false,
     debug: false,
     showCommands: false,
@@ -163,6 +200,11 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--dry-run") {
       options.dryRun = true;
+      continue;
+    }
+
+    if (arg === "--manual") {
+      options.manual = true;
       continue;
     }
 
@@ -243,17 +285,206 @@ function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
-export async function main(argv = process.argv.slice(2)): Promise<number> {
+function formatManualActionResult(action: string, fixedCount: number): string {
+  return `${action} fixed ${formatCount(fixedCount)}.`;
+}
+
+function buildManualMenuOptions(input: {
+  supportsRemediation: boolean;
+  supportsDedupe: boolean;
+}): ManualMenuOption[] {
+  const options: Array<Omit<ManualMenuOption, "key">> = [];
+
+  if (input.supportsRemediation) {
+    options.push({
+      label: "audit-fix",
+      action: "audit-fix",
+    });
+  }
+
+  if (input.supportsDedupe) {
+    options.push({
+      label: "dedupe",
+      action: "dedupe",
+    });
+  }
+
+  options.push(
+    {
+      label: "print result",
+      action: "print-result",
+    },
+    {
+      label: "list all vulnerabilities",
+      action: "list-vulnerabilities",
+    },
+    {
+      label: "finish",
+      action: "finish",
+    },
+  );
+
+  return options.map((option, index) => ({
+    key: String.fromCharCode(65 + index),
+    ...option,
+  }));
+}
+
+async function defaultSelectManualAction(context: {
+  supportsRemediation: boolean;
+  supportsDedupe: boolean;
+  write: (text: string) => void;
+}): Promise<string> {
+  const lines = [
+    "Choose an action:",
+    ...buildManualMenuOptions(context).map(
+      (option) => `  ${option.key}. ${option.label}`,
+    ),
+  ];
+
+  context.write(`${lines.join("\n")}\n`);
+
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    return (await rl.question("Select action: ")).trim().toUpperCase();
+  } finally {
+    rl.close();
+  }
+}
+
+async function runManualMode(
+  options: CliOptions,
+  session: AuditSession,
+  selectManualAction: NonNullable<CliDependencies["selectManualAction"]>,
+  write: (text: string) => void,
+): Promise<number> {
+  write(
+    `manual mode: initial audit found ${formatCount(session.initial.total)}\n\n`,
+  );
+
+  while (true) {
+    const menuOptions = buildManualMenuOptions({
+      supportsRemediation: session.supportsRemediation,
+      supportsDedupe: session.supportsDedupe,
+    });
+    const choice = await selectManualAction({
+      supportsRemediation: session.supportsRemediation,
+      supportsDedupe: session.supportsDedupe,
+      write,
+    });
+    const selectedOption = menuOptions.find((option) => option.key === choice);
+
+    if (!selectedOption) {
+      write(
+        `Select ${menuOptions.map((option) => option.key).join(", ")}.\n\n`,
+      );
+      continue;
+    }
+
+    if (selectedOption.action === "audit-fix") {
+      const outcome = await session.applyFixes({
+        auditLabel: "Recheck after fixes",
+      });
+
+      if (!outcome) {
+        write("audit-fix is not supported by this package manager.\n\n");
+        continue;
+      }
+
+      write(
+        `${formatManualActionResult("audit-fix", outcome.fixedCount)}\nremaining: ${formatCount(outcome.remainingCount)}\n\n`,
+      );
+      continue;
+    }
+
+    if (selectedOption.action === "dedupe") {
+      const outcome = await session.dedupe({
+        auditLabel: "Recheck after dedupe",
+      });
+
+      if (!outcome) {
+        write("dedupe is not supported by this package manager.\n\n");
+        continue;
+      }
+
+      write(
+        `${formatManualActionResult("dedupe", outcome.fixedCount)}\nremaining: ${formatCount(outcome.remainingCount)}\n\n`,
+      );
+      continue;
+    }
+
+    if (selectedOption.action === "print-result") {
+      const outcome = await session.auditCurrent("Refresh audit");
+      write(
+        `${formatManualActionResult("print result", outcome.fixedCount)}\nremaining: ${formatCount(outcome.remainingCount)}\n\n`,
+      );
+      write(
+        `${formatTextSummary(
+          session.toResult({ dedupe: options.dedupe, dryRun: false }),
+        )}\n\n`,
+      );
+      continue;
+    }
+
+    if (selectedOption.action === "list-vulnerabilities") {
+      const outcome = await session.auditCurrent("Refresh audit");
+      write(
+        `${formatManualActionResult("list all vulnerabilities", outcome.fixedCount)}\nremaining: ${formatCount(outcome.remainingCount)}\n\n`,
+      );
+      write(`${formatVulnerabilityList(session.current)}\n\n`);
+      continue;
+    }
+
+    const outcome = await session.auditCurrent("Final audit");
+    const result = session.toResult({ dedupe: options.dedupe, dryRun: false });
+
+    write(
+      `${formatManualActionResult("finish", outcome.fixedCount)}\nremaining: ${formatCount(outcome.remainingCount)}\n\n`,
+    );
+    write(`${formatTextSummary(result)}\n`);
+    return result.exitCode;
+  }
+}
+
+export async function main(
+  argv = process.argv.slice(2),
+  dependencies: CliDependencies = {},
+): Promise<number> {
   const options = parseArgs(argv);
+  const stdout = dependencies.stdout ?? process.stdout;
+  const stderr = dependencies.stderr ?? process.stderr;
+  const stdin = dependencies.stdin ?? process.stdin;
+  const runAuditFixImpl = dependencies.runAuditFixImpl ?? runAuditFix;
+  const createAuditSessionImpl =
+    dependencies.createAuditSessionImpl ?? createAuditSession;
+  const selectManualAction =
+    dependencies.selectManualAction ?? defaultSelectManualAction;
 
   if (options.help) {
-    process.stdout.write(`${HELP_TEXT}\n`);
+    stdout.write(`${HELP_TEXT}\n`);
     return 0;
   }
 
   if (options.version) {
-    process.stdout.write(`${readPackageVersion()}\n`);
+    stdout.write(`${readPackageVersion()}\n`);
     return 0;
+  }
+
+  if (options.manual && options.json) {
+    throw new CliUsageError("--manual cannot be combined with --json");
+  }
+
+  if (options.manual && options.dryRun) {
+    throw new CliUsageError("--manual cannot be combined with --dry-run");
+  }
+
+  if (options.manual && (!stdin.isTTY || !stdout.isTTY)) {
+    throw new CliUsageError("--manual requires an interactive terminal");
   }
 
   if (!options.color) {
@@ -262,52 +493,67 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 
   const showCommands = options.showCommands || options.verbose || options.debug;
   const diagnosticsWrite = (text: string) =>
-    options.json ? process.stderr.write(text) : process.stdout.write(text);
+    options.json ? stderr.write(text) : stdout.write(text);
   const stepReporter = createStepLifecycleReporter({
     enabled: !options.json || options.debug || showCommands,
     color: options.color,
     verbose: options.verbose,
     showCommands,
-    isInteractive: Boolean(process.stdout.isTTY),
+    isInteractive: Boolean(stdout.isTTY),
     write: diagnosticsWrite,
   });
 
-  const result = await runAuditFix(
-    {
-      cwd: options.cwd,
-      manager: options.manager,
-      scope: options.scope,
-      threshold: options.threshold,
-      dedupe: options.dedupe,
-      dryRun: options.dryRun,
-      verbose: options.verbose,
-    },
-    {
-      hooks: {
-        onStepStart: (step) => {
-          stepReporter.start(step);
-        },
-        onStepComplete: (step) => {
-          stepReporter.complete(step);
-        },
-        onStepFail: (step) => {
-          stepReporter.fail(step);
-        },
+  const runOptions = {
+    cwd: options.cwd,
+    manager: options.manager,
+    scope: options.scope,
+    threshold: options.threshold,
+    dedupe: options.dedupe,
+    dryRun: options.dryRun,
+    verbose: options.verbose,
+  };
+  const dependenciesForRun = {
+    hooks: {
+      onStepStart: (step: { label: string; command: readonly string[] }) => {
+        stepReporter.start(step);
       },
-      onManagerDetected: (detection) => {
-        if (!options.debug) {
-          return;
-        }
+      onStepComplete: (step: { label: string; command: readonly string[] }) => {
+        stepReporter.complete(step);
+      },
+      onStepFail: (step: { label: string; command: readonly string[] }) => {
+        stepReporter.fail(step);
+      },
+    },
+    onManagerDetected: (detection: {
+      manager: string;
+      agent: string;
+      source: string;
+    }) => {
+      if (!options.debug) {
+        return;
+      }
 
-        diagnosticsWrite(`Detected package manager: ${detection.manager}\n`);
-      },
+      diagnosticsWrite(`Detected package manager: ${detection.manager}\n`);
     },
-  );
+  };
+
+  if (options.manual) {
+    const session = await createAuditSessionImpl(
+      runOptions,
+      dependenciesForRun,
+    );
+
+    return runManualMode(options, session, selectManualAction, (text) => {
+      stdout.write(text);
+    });
+  }
+
+  const result = await runAuditFixImpl(runOptions, dependenciesForRun);
 
   if (options.json) {
-    process.stdout.write(`${JSON.stringify(toJsonSummary(result), null, 2)}\n`);
+    stdout.write(`${JSON.stringify(toJsonSummary(result), null, 2)}\n`);
   } else {
-    process.stdout.write(`${formatTextSummary(result)}\n`);
+    stdout.write(`${formatTextSummary(result)}\n`);
   }
 
   return result.exitCode;

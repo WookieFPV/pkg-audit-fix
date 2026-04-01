@@ -98,8 +98,10 @@ export interface FixedPackageGroup {
   url?: string | undefined;
 }
 
+export type StepFixLabel = "Apply fixes" | "Consolidate dependency tree";
+
 export interface StepFixResult {
-  label: "Apply fixes" | "Consolidate dependency tree";
+  label: StepFixLabel;
   fixedCount: number;
   remainingCount: number;
 }
@@ -120,6 +122,30 @@ export interface RunAuditFixResult {
   fixed: FixedPackageGroup[];
   exitCode: 0 | 2;
   status: "clean" | "resolved-some" | "no-change";
+}
+
+export interface AuditSessionActionResult {
+  before: NormalizedAuditSnapshot;
+  after: NormalizedAuditSnapshot;
+  fixedCount: number;
+  remainingCount: number;
+}
+
+export interface AuditSession {
+  readonly manager: PackageManager;
+  readonly detectionSource: DetectionSource;
+  readonly initial: NormalizedAuditSnapshot;
+  readonly current: NormalizedAuditSnapshot;
+  readonly supportsRemediation: boolean;
+  readonly supportsDedupe: boolean;
+  auditCurrent(label: string): Promise<AuditSessionActionResult>;
+  applyFixes(options?: {
+    auditLabel?: string | undefined;
+  }): Promise<AuditSessionActionResult | null>;
+  dedupe(options?: {
+    auditLabel?: string | undefined;
+  }): Promise<AuditSessionActionResult | null>;
+  toResult(options: { dedupe: DedupeMode; dryRun: boolean }): RunAuditFixResult;
 }
 
 export interface JsonSummary {
