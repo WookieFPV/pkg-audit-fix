@@ -73,10 +73,12 @@ export const executeStep: ExecFunction = (step, options) =>
       };
       const acceptedExitCodes = step.acceptedExitCodes ?? [0];
 
-      if (
-        exitCode !== null &&
-        (acceptedExitCodes === "any" || acceptedExitCodes.includes(exitCode))
-      ) {
+      if (exitCode !== null && acceptedExitCodes.includes(exitCode)) {
+        resolve(result);
+        return;
+      }
+
+      if (step.acceptResult?.(result)) {
         resolve(result);
         return;
       }

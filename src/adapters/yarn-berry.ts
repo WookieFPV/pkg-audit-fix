@@ -11,6 +11,22 @@ import {
 import type { NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
 
+function isBerryAuditOutput(stdout: string): boolean {
+  if (parseBerryAuditOutput(stdout)) {
+    return true;
+  }
+
+  try {
+    const events = parseJsonLines(stdout, "yarn");
+
+    return events.some(
+      (event) => typeof event.value === "string" && isRecord(event.children),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function parseBerryAuditOutput(stdout: string): Record<string, unknown> | null {
   try {
     return parseJsonObject(stdout, "yarn");
@@ -65,7 +81,7 @@ function collectBerryNdjsonEntries(stdout: string): NormalizedVulnerability[] {
 
 export const yarnBerryAdapter: PackageManagerAdapter = {
   manager: "yarn",
-  auditExitCodes: "any",
+  auditExitCodes: [0],
 
   buildAuditProcess(context) {
     const args = [
@@ -104,6 +120,10 @@ export const yarnBerryAdapter: PackageManagerAdapter = {
       command: "yarn",
       args: ["dedupe"],
     };
+  },
+
+  isAuditResult(stdout) {
+    return isBerryAuditOutput(stdout);
   },
 
   parseAudit(stdout, context) {

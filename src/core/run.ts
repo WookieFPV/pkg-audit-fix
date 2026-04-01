@@ -20,8 +20,9 @@ function withLabel(
   command: string,
   args: string[],
   acceptedExitCodes: CommandStep["acceptedExitCodes"] = [0],
+  acceptResult?: CommandStep["acceptResult"],
 ): CommandStep {
-  return { label, command, args, acceptedExitCodes };
+  return { label, command, args, acceptedExitCodes, acceptResult };
 }
 
 function parseAuditResult(
@@ -130,6 +131,7 @@ export async function runAuditFix(
     auditProcess.command,
     auditProcess.args,
     auditExitCodes,
+    (result) => adapter.isAuditResult?.(result.stdout) ?? false,
   );
   const initialAuditResult = await runStep(initialAuditStep);
   const initial = parseAuditResult(initialAuditStep, initialAuditResult, () =>
@@ -195,6 +197,7 @@ export async function runAuditFix(
       auditProcess.command,
       auditProcess.args,
       auditExitCodes,
+      (result) => adapter.isAuditResult?.(result.stdout) ?? false,
     );
     const finalAuditResult = await runStep(finalAuditStep);
     final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
@@ -212,6 +215,7 @@ export async function runAuditFix(
       auditProcess.command,
       auditProcess.args,
       auditExitCodes,
+      (result) => adapter.isAuditResult?.(result.stdout) ?? false,
     );
     const postFixAuditResult = await runStep(postFixAuditStep);
     const postFixSnapshot = parseAuditResult(
@@ -246,6 +250,7 @@ export async function runAuditFix(
         auditProcess.command,
         auditProcess.args,
         auditExitCodes,
+        (result) => adapter.isAuditResult?.(result.stdout) ?? false,
       );
       const finalAuditResult = await runStep(finalAuditStep);
       final = parseAuditResult(finalAuditStep, finalAuditResult, () =>

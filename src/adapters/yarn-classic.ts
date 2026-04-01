@@ -11,9 +11,22 @@ import {
 import type { NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
 
+function isClassicAuditOutput(stdout: string): boolean {
+  try {
+    const events = parseJsonLines(stdout, "yarn");
+
+    return events.some(
+      (event) =>
+        event.type === "auditSummary" || event.type === "auditAdvisory",
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const yarnClassicAdapter: PackageManagerAdapter = {
   manager: "yarn",
-  auditExitCodes: "any",
+  auditExitCodes: [0],
 
   buildAuditProcess(context) {
     const args = ["audit", "--json", "--level", context.threshold];
@@ -40,6 +53,10 @@ export const yarnClassicAdapter: PackageManagerAdapter = {
 
   buildDedupeProcess() {
     return null;
+  },
+
+  isAuditResult(stdout) {
+    return isClassicAuditOutput(stdout);
   },
 
   parseAudit(stdout, context) {

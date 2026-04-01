@@ -25,13 +25,14 @@ describe("executeStep", () => {
     expect(result.stdout.trim()).toBe('{"ok":true}');
   });
 
-  it("accepts any non-null exit code when configured for bitmask-style audits", async () => {
+  it("accepts non-zero exits when the result matches a valid audit payload", async () => {
     const result = await executeStep(
       {
         label: "initial audit",
         command: process.execPath,
         args: ["-e", "console.log('{\"ok\":true}'); process.exit(12)"],
-        acceptedExitCodes: "any",
+        acceptResult: (stepResult) =>
+          stepResult.stdout.trim() === '{"ok":true}',
       },
       {
         cwd: repoRoot(),

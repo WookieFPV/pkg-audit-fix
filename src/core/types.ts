@@ -46,11 +46,12 @@ export interface ProcessSpec {
   args: string[];
 }
 
-export type AcceptedExitCodes = number[] | "any";
+export type AcceptedExitCodes = number[];
 
 export interface CommandStep extends ProcessSpec {
   label: string;
   acceptedExitCodes?: AcceptedExitCodes | undefined;
+  acceptResult?: ((result: CommandResult) => boolean) | undefined;
 }
 
 export interface CommandResult {

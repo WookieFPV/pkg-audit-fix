@@ -264,7 +264,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   const diagnosticsWrite = (text: string) =>
     options.json ? process.stderr.write(text) : process.stdout.write(text);
   const stepReporter = createStepLifecycleReporter({
-    enabled: !options.json || options.debug,
+    enabled: !options.json || options.debug || showCommands,
     color: options.color,
     verbose: options.verbose,
     showCommands,

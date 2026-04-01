@@ -258,6 +258,17 @@ describe("adapter fixtures", () => {
     expect(after.total).toBe(0);
   });
 
+  it("recognizes valid yarn classic audit payloads", () => {
+    expect(
+      yarnClassicAdapter.isAuditResult?.(
+        readFixture("yarn-classic", "after.jsonl"),
+      ),
+    ).toBe(true);
+    expect(
+      yarnClassicAdapter.isAuditResult?.("Usage Error: missing plugin"),
+    ).toBe(false);
+  });
+
   it("parses yarn berry fixture snapshots", () => {
     const before = yarnBerryAdapter.parseAudit(
       readFixture("yarn-berry", "before.json"),
@@ -282,6 +293,13 @@ describe("adapter fixtures", () => {
     expect(before.entries[0]?.installedVersion).toBe("1.1.11");
     expect(before.entries[0]?.advisoryIds).toEqual(["GHSA-F886-M6HF-6M8V"]);
     expect(after.total).toBe(0);
+  });
+
+  it("recognizes valid yarn berry audit payloads", () => {
+    expect(
+      yarnBerryAdapter.isAuditResult?.(readFixture("yarn-berry", "after.json")),
+    ).toBe(true);
+    expect(yarnBerryAdapter.isAuditResult?.("Network Error")).toBe(false);
   });
 
   it("parses yarn berry ndjson output", () => {
