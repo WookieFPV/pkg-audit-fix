@@ -1,4 +1,5 @@
 import type {
+  AcceptedExitCodes,
   AuditLevel,
   AuditScope,
   NormalizedAuditSnapshot,
@@ -13,6 +14,8 @@ export interface AdapterContext {
 
 export interface PackageManagerAdapter {
   readonly manager: PackageManager;
+  readonly auditExitCodes?: AcceptedExitCodes;
+  readonly remediationExitCodes?: AcceptedExitCodes;
   buildAuditProcess(context: AdapterContext): ProcessSpec;
   buildRemediationProcess(context: AdapterContext): ProcessSpec | null;
   buildPostRemediationProcess(context: AdapterContext): ProcessSpec | null;

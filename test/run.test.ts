@@ -30,7 +30,11 @@ describe("runAuditFix", () => {
         verbose: false,
       },
       {
-        detectManager: async () => ({ manager: "pnpm", source: "filesystem" }),
+        detectManager: async () => ({
+          manager: "pnpm",
+          agent: "pnpm",
+          source: "filesystem",
+        }),
         exec,
       },
     );
@@ -75,7 +79,11 @@ describe("runAuditFix", () => {
         verbose: false,
       },
       {
-        detectManager: async () => ({ manager: "pnpm", source: "override" }),
+        detectManager: async () => ({
+          manager: "pnpm",
+          agent: "pnpm",
+          source: "override",
+        }),
         exec,
       },
     );
@@ -121,7 +129,11 @@ describe("runAuditFix", () => {
         verbose: false,
       },
       {
-        detectManager: async () => ({ manager: "npm", source: "override" }),
+        detectManager: async () => ({
+          manager: "npm",
+          agent: "npm",
+          source: "override",
+        }),
         exec,
       },
     );
@@ -167,7 +179,11 @@ describe("runAuditFix", () => {
         verbose: false,
       },
       {
-        detectManager: async () => ({ manager: "pnpm", source: "override" }),
+        detectManager: async () => ({
+          manager: "pnpm",
+          agent: "pnpm",
+          source: "override",
+        }),
         exec,
       },
     );
@@ -227,7 +243,11 @@ describe("runAuditFix", () => {
         verbose: false,
       },
       {
-        detectManager: async () => ({ manager: "npm", source: "override" }),
+        detectManager: async () => ({
+          manager: "npm",
+          agent: "npm",
+          source: "override",
+        }),
         exec,
       },
     );
@@ -279,7 +299,11 @@ describe("runAuditFix", () => {
         verbose: false,
       },
       {
-        detectManager: async () => ({ manager: "bun", source: "override" }),
+        detectManager: async () => ({
+          manager: "bun",
+          agent: "bun",
+          source: "override",
+        }),
         exec,
       },
     );
@@ -293,6 +317,105 @@ describe("runAuditFix", () => {
     expect(result.stepFixes).toEqual([
       {
         label: "Apply fixes",
+        fixedCount: 2,
+        remainingCount: 0,
+      },
+    ]);
+  });
+
+  it("does not re-audit when yarn classic has no fix or dedupe step", async () => {
+    const steps: string[] = [];
+    const exec = vi.fn(async (step) => {
+      steps.push(step.label);
+
+      return {
+        command: step.command,
+        args: step.args,
+        stdout: readFixture("yarn-classic", "before.jsonl"),
+        stderr: "",
+        exitCode: 12,
+        signal: null,
+      };
+    });
+
+    const result = await runAuditFix(
+      {
+        cwd: "/tmp/project",
+        manager: "yarn",
+        scope: "all",
+        threshold: "moderate",
+        dedupe: "auto",
+        dryRun: false,
+        verbose: false,
+      },
+      {
+        detectManager: async () => ({
+          manager: "yarn",
+          agent: "yarn",
+          source: "override",
+        }),
+        exec,
+      },
+    );
+
+    expect(steps).toEqual(["Initial audit"]);
+    expect(result.fixedCount).toBe(0);
+    expect(result.remainingCount).toBe(2);
+    expect(result.dedupeRan).toBe(false);
+    expect(result.status).toBe("no-change");
+  });
+
+  it("runs a dedupe pass for yarn berry when vulnerabilities remain", async () => {
+    const steps: string[] = [];
+    const stdoutByStep: Record<string, string> = {
+      "Initial audit": readFixture("yarn-berry", "before.json"),
+      "Recheck after fixes": readFixture("yarn-berry", "before.json"),
+      "Consolidate dependency tree": "",
+      "Final audit": readFixture("yarn-berry", "after.json"),
+    };
+    const exec = vi.fn(async (step) => {
+      steps.push(step.label);
+
+      return {
+        command: step.command,
+        args: step.args,
+        stdout: stdoutByStep[step.label] ?? "",
+        stderr: "",
+        exitCode: step.label === "Consolidate dependency tree" ? 0 : 1,
+        signal: null,
+      };
+    });
+
+    const result = await runAuditFix(
+      {
+        cwd: "/tmp/project",
+        manager: "yarn",
+        scope: "all",
+        threshold: "moderate",
+        dedupe: "auto",
+        dryRun: false,
+        verbose: false,
+      },
+      {
+        detectManager: async () => ({
+          manager: "yarn",
+          agent: "yarn@berry",
+          source: "override",
+        }),
+        exec,
+      },
+    );
+
+    expect(steps).toEqual([
+      "Initial audit",
+      "Recheck after fixes",
+      "Consolidate dependency tree",
+      "Final audit",
+    ]);
+    expect(result.dedupeRan).toBe(true);
+    expect(result.stepFixes).toEqual([
+      {
+        label: "Consolidate dependency tree",
         fixedCount: 2,
         remainingCount: 0,
       },

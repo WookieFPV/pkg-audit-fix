@@ -1,6 +1,6 @@
 # pkg-audit-fix
 
-`pkg-audit-fix` is a standalone Node.js CLI that audits and remediates dependency vulnerabilities across `pnpm`, `npm`, and `bun` projects.
+`pkg-audit-fix` is a standalone Node.js CLI that audits and remediates dependency vulnerabilities across `pnpm`, `npm`, `yarn`, and `bun` projects.
 
 ## Install
 
@@ -31,6 +31,8 @@ pkg-audit-fix --json
 
 - `pnpm`: remediation runs `pnpm audit --json --fix` and then `pnpm install --no-frozen-lockfile`.
 - `npm`: remediation runs `npm audit fix --json`. Severity filtering is applied by `pkg-audit-fix` after parsing the audit report, because npm's `--audit-level` only changes npm's failure threshold.
+- `yarn` Classic: audits via `yarn audit --json`. Classic Yarn does not provide an `audit fix` flow, so `pkg-audit-fix` reports findings but does not apply package updates automatically.
+- `yarn` Berry: audits via `yarn npm audit --json --all --recursive` and can optionally run `yarn dedupe` after the audit pass.
 - `bun`: remediation runs `bun update --production` followed by a fresh audit. Bun is modeled as update-plus-reaudit in v1.
 
 ## Development

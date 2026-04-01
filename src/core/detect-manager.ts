@@ -7,6 +7,7 @@ import { detect, getUserAgent } from "package-manager-detector/detect";
 import {
   type DetectionResult,
   ManagerDetectionError,
+  type PackageManagerAgent,
   type PackageManagerOverride,
 } from "./types.js";
 
@@ -17,16 +18,58 @@ const DETECTION_STRATEGIES = [
   "devEngines-field",
 ] as const;
 
-function coerceManager(
+function coerceDetection(
   value: DetectedAgentName | PackageManagerDetectResult | null | undefined,
-): DetectionResult["manager"] | null {
+): Pick<DetectionResult, "manager" | "agent"> | null {
   const manager = typeof value === "string" ? value : value?.name;
+  const agent = typeof value === "string" ? value : (value?.agent ?? manager);
 
-  if (manager === "pnpm" || manager === "npm" || manager === "bun") {
-    return manager;
+  if (manager === "pnpm") {
+    return {
+      manager,
+      agent: agent === "pnpm@6" ? "pnpm@6" : "pnpm",
+    };
+  }
+
+  if (manager === "yarn") {
+    return {
+      manager,
+      agent: agent === "yarn@berry" ? "yarn@berry" : "yarn",
+    };
+  }
+
+  if (manager === "npm" || manager === "bun") {
+    return {
+      manager,
+      agent: manager,
+    };
   }
 
   return null;
+}
+
+async function detectAgentForOverride(
+  cwd: string,
+  override: Exclude<PackageManagerOverride, "auto">,
+  detectFn: typeof detect,
+): Promise<PackageManagerAgent> {
+  if (override !== "yarn") {
+    return override;
+  }
+
+  const detected = await Promise.resolve(
+    detectFn({
+      cwd,
+      strategies: [...DETECTION_STRATEGIES],
+    }),
+  ).catch(() => null);
+  const coerced = coerceDetection(detected);
+
+  if (coerced?.manager === override) {
+    return coerced.agent;
+  }
+
+  return override;
 }
 
 export async function detectPackageManager(
@@ -45,6 +88,7 @@ export async function detectPackageManager(
   if (input.override !== "auto") {
     return {
       manager: input.override,
+      agent: await detectAgentForOverride(input.cwd, input.override, detectFn),
       source: "override",
     };
   }
@@ -53,11 +97,12 @@ export async function detectPackageManager(
     cwd: input.cwd,
     strategies: [...DETECTION_STRATEGIES],
   }).catch(() => null);
-  const detectedManager = coerceManager(detected);
+  const detectedManager = coerceDetection(detected);
 
   if (detectedManager) {
     return {
-      manager: detectedManager,
+      manager: detectedManager.manager,
+      agent: detectedManager.agent,
       source: "filesystem",
     };
   }
@@ -70,16 +115,17 @@ export async function detectPackageManager(
     userAgent = null;
   }
 
-  const userAgentManager = coerceManager(userAgent);
+  const userAgentManager = coerceDetection(userAgent);
 
   if (userAgentManager) {
     return {
-      manager: userAgentManager,
+      manager: userAgentManager.manager,
+      agent: userAgentManager.agent,
       source: "user-agent",
     };
   }
 
   throw new ManagerDetectionError(
-    "Could not detect a supported package manager. Re-run with --manager pnpm|npm|bun.",
+    "Could not detect a supported package manager. Re-run with --manager pnpm|npm|yarn|bun.",
   );
 }

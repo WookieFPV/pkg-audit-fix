@@ -58,6 +58,7 @@ function extractBunAuditItems(json: Record<string, unknown>) {
 
 export const bunAdapter: PackageManagerAdapter = {
   manager: "bun",
+  auditExitCodes: [0, 1],
 
   buildAuditProcess(context) {
     const args = ["audit", "--json", `--audit-level=${context.threshold}`];

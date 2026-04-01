@@ -168,6 +168,32 @@ export function parseJsonObject(
   return parsed;
 }
 
+export function parseJsonLines(
+  stdout: string,
+  manager: PackageManager,
+): Record<string, unknown>[] {
+  const lines = stdout
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  try {
+    return lines.map((line) => {
+      const parsed = JSON.parse(line);
+
+      if (!isRecord(parsed)) {
+        throw new Error("Expected each JSON line to be an object");
+      }
+
+      return parsed;
+    });
+  } catch (error) {
+    throw new Error(
+      `Failed to parse ${manager} audit JSON lines: ${error instanceof Error ? error.message : "unknown parse error"}`,
+    );
+  }
+}
+
 export function collectAdvisoryIds(...sources: unknown[]): string[] {
   const advisoryIds = new Set<string>();
 

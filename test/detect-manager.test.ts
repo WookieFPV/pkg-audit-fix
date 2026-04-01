@@ -18,8 +18,36 @@ describe("detectPackageManager", () => {
       },
     );
 
-    expect(result).toEqual({ manager: "pnpm", source: "override" });
+    expect(result).toEqual({
+      manager: "pnpm",
+      agent: "pnpm",
+      source: "override",
+    });
     expect(detectFn).not.toHaveBeenCalled();
+    expect(getUserAgentFn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the detected berry agent when yarn is explicitly overridden", async () => {
+    const detectFn = vi
+      .fn()
+      .mockResolvedValue({ name: "yarn", agent: "yarn@berry" });
+    const getUserAgentFn = vi.fn();
+    const result = await detectPackageManager(
+      {
+        cwd: "/tmp/project",
+        override: "yarn",
+      },
+      {
+        detectFn,
+        getUserAgentFn,
+      },
+    );
+
+    expect(result).toEqual({
+      manager: "yarn",
+      agent: "yarn@berry",
+      source: "override",
+    });
     expect(getUserAgentFn).not.toHaveBeenCalled();
   });
 
@@ -37,7 +65,11 @@ describe("detectPackageManager", () => {
       },
     );
 
-    expect(result).toEqual({ manager: "bun", source: "filesystem" });
+    expect(result).toEqual({
+      manager: "bun",
+      agent: "bun",
+      source: "filesystem",
+    });
     expect(detectFn).toHaveBeenCalledOnce();
   });
 
@@ -55,7 +87,11 @@ describe("detectPackageManager", () => {
       },
     );
 
-    expect(result).toEqual({ manager: "npm", source: "user-agent" });
+    expect(result).toEqual({
+      manager: "npm",
+      agent: "npm",
+      source: "user-agent",
+    });
     expect(detectFn).toHaveBeenCalledOnce();
   });
 
@@ -73,8 +109,35 @@ describe("detectPackageManager", () => {
       },
     );
 
-    expect(result).toEqual({ manager: "bun", source: "filesystem" });
+    expect(result).toEqual({
+      manager: "bun",
+      agent: "bun",
+      source: "filesystem",
+    });
     expect(detectFn).toHaveBeenCalledOnce();
+  });
+
+  it("detects yarn berry from the filesystem", async () => {
+    const detectFn = vi
+      .fn()
+      .mockResolvedValue({ name: "yarn", agent: "yarn@berry" });
+    const getUserAgentFn = vi.fn().mockResolvedValue("npm");
+    const result = await detectPackageManager(
+      {
+        cwd: "/tmp/project",
+        override: "auto",
+      },
+      {
+        detectFn,
+        getUserAgentFn,
+      },
+    );
+
+    expect(result).toEqual({
+      manager: "yarn",
+      agent: "yarn@berry",
+      source: "filesystem",
+    });
   });
 
   it("throws with an override hint when no supported manager is found", async () => {

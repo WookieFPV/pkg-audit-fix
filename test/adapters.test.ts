@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { bunAdapter } from "../src/adapters/bun.js";
 import { npmAdapter } from "../src/adapters/npm.js";
 import { pnpmAdapter } from "../src/adapters/pnpm.js";
+import { yarnBerryAdapter } from "../src/adapters/yarn-berry.js";
+import { yarnClassicAdapter } from "../src/adapters/yarn-classic.js";
 import { readFixture } from "./helpers.js";
 
 describe("adapter commands", () => {
@@ -98,6 +100,81 @@ describe("adapter commands", () => {
       bunAdapter.buildDedupeProcess({ threshold: "moderate", scope: "prod" }),
     ).toBeNull();
   });
+
+  it("builds yarn classic commands", () => {
+    expect(
+      yarnClassicAdapter.buildAuditProcess({
+        threshold: "moderate",
+        scope: "all",
+      }),
+    ).toEqual({
+      command: "yarn",
+      args: ["audit", "--json", "--level", "moderate"],
+    });
+    expect(
+      yarnClassicAdapter.buildAuditProcess({
+        threshold: "high",
+        scope: "prod",
+      }),
+    ).toEqual({
+      command: "yarn",
+      args: ["audit", "--json", "--level", "high", "--groups", "dependencies"],
+    });
+    expect(
+      yarnClassicAdapter.buildDedupeProcess({
+        threshold: "moderate",
+        scope: "prod",
+      }),
+    ).toBeNull();
+  });
+
+  it("builds yarn berry commands", () => {
+    expect(
+      yarnBerryAdapter.buildAuditProcess({
+        threshold: "moderate",
+        scope: "all",
+      }),
+    ).toEqual({
+      command: "yarn",
+      args: [
+        "npm",
+        "audit",
+        "--json",
+        "--all",
+        "--recursive",
+        "--severity",
+        "moderate",
+      ],
+    });
+    expect(
+      yarnBerryAdapter.buildAuditProcess({
+        threshold: "high",
+        scope: "dev",
+      }),
+    ).toEqual({
+      command: "yarn",
+      args: [
+        "npm",
+        "audit",
+        "--json",
+        "--all",
+        "--recursive",
+        "--severity",
+        "high",
+        "--environment",
+        "development",
+      ],
+    });
+    expect(
+      yarnBerryAdapter.buildDedupeProcess({
+        threshold: "moderate",
+        scope: "prod",
+      }),
+    ).toEqual({
+      command: "yarn",
+      args: ["dedupe"],
+    });
+  });
 });
 
 describe("adapter fixtures", () => {
@@ -150,6 +227,57 @@ describe("adapter fixtures", () => {
       "brace-expansion",
       "node-forge",
     ]);
+    expect(before.entries[0]?.advisoryIds).toEqual(["GHSA-F886-M6HF-6M8V"]);
+    expect(after.total).toBe(0);
+  });
+
+  it("parses yarn classic fixture snapshots", () => {
+    const before = yarnClassicAdapter.parseAudit(
+      readFixture("yarn-classic", "before.jsonl"),
+      {
+        threshold: "moderate",
+        scope: "prod",
+      },
+    );
+    const after = yarnClassicAdapter.parseAudit(
+      readFixture("yarn-classic", "after.jsonl"),
+      {
+        threshold: "moderate",
+        scope: "prod",
+      },
+    );
+
+    expect(before.total).toBe(2);
+    expect(before.entries.map((entry) => entry.packageName)).toEqual([
+      "brace-expansion",
+      "node-forge",
+    ]);
+    expect(before.entries[0]?.advisoryIds).toEqual(["GHSA-F886-M6HF-6M8V"]);
+    expect(after.total).toBe(0);
+  });
+
+  it("parses yarn berry fixture snapshots", () => {
+    const before = yarnBerryAdapter.parseAudit(
+      readFixture("yarn-berry", "before.json"),
+      {
+        threshold: "moderate",
+        scope: "prod",
+      },
+    );
+    const after = yarnBerryAdapter.parseAudit(
+      readFixture("yarn-berry", "after.json"),
+      {
+        threshold: "moderate",
+        scope: "prod",
+      },
+    );
+
+    expect(before.total).toBe(2);
+    expect(before.entries.map((entry) => entry.packageName)).toEqual([
+      "brace-expansion",
+      "node-forge",
+    ]);
+    expect(before.entries[0]?.installedVersion).toBe("1.1.11");
     expect(before.entries[0]?.advisoryIds).toEqual(["GHSA-F886-M6HF-6M8V"]);
     expect(after.total).toBe(0);
   });

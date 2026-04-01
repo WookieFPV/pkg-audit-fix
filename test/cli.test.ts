@@ -83,4 +83,23 @@ describe("cli defaults", () => {
       stdoutWrite.mockRestore();
     }
   });
+
+  it("accepts yarn as a manager override", async () => {
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const cli = await import("../src/cli.js");
+
+    try {
+      const exitCode = await cli.main(["--manager", "yarn"]);
+
+      expect(exitCode).toBe(0);
+      expect(runAuditFix).toHaveBeenCalledWith(
+        expect.objectContaining({ manager: "yarn" }),
+        expect.any(Object),
+      );
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+  });
 });

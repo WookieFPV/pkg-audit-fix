@@ -18,7 +18,7 @@ function withLabel(
   label: string,
   command: string,
   args: string[],
-  acceptedExitCodes: number[] = [0],
+  acceptedExitCodes: CommandStep["acceptedExitCodes"] = [0],
 ): CommandStep {
   return { label, command, args, acceptedExitCodes };
 }
@@ -71,10 +71,10 @@ export async function runAuditFix(
     cwd: options.cwd,
     override: options.manager,
   });
-  const adapter = getAdapter(detection.manager);
+  const adapter = getAdapter(detection.agent);
 
   if (!adapter) {
-    throw new Error(`No adapter registered for ${detection.manager}`);
+    throw new Error(`No adapter registered for ${detection.agent}`);
   }
 
   const context = {
@@ -82,6 +82,7 @@ export async function runAuditFix(
     scope: options.scope,
   };
   const auditProcess = adapter.buildAuditProcess(context);
+  const auditExitCodes = adapter.auditExitCodes ?? [0, 1];
   const stepFixes: StepFixResult[] = [];
 
   const recordStepFix = (
@@ -125,7 +126,7 @@ export async function runAuditFix(
     "Initial audit",
     auditProcess.command,
     auditProcess.args,
-    [0, 1],
+    auditExitCodes,
   );
   const initialAuditResult = await runStep(initialAuditStep);
   const initial = parseAuditResult(initialAuditStep, initialAuditResult, () =>
@@ -153,23 +154,19 @@ export async function runAuditFix(
   }
 
   let remediationRan = false;
+  const dedupeProcess = adapter.buildDedupeProcess(context);
+
   if (!options.dryRun) {
     const remediation = adapter.buildRemediationProcess(context);
 
     if (remediation) {
       remediationRan = true;
-      const remediationAcceptedExitCodes =
-        remediation.command === "npm" && remediation.args[0] === "audit"
-          ? [0, 1]
-          : remediation.command === "pnpm" && remediation.args[0] === "audit"
-            ? [0, 1]
-            : [0];
       await runStep(
         withLabel(
           "Apply fixes",
           remediation.command,
           remediation.args,
-          remediationAcceptedExitCodes,
+          adapter.remediationExitCodes ?? [0],
         ),
       );
     }
@@ -194,7 +191,7 @@ export async function runAuditFix(
       "Final audit",
       auditProcess.command,
       auditProcess.args,
-      [0, 1],
+      auditExitCodes,
     );
     const finalAuditResult = await runStep(finalAuditStep);
     final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
@@ -204,12 +201,14 @@ export async function runAuditFix(
     if (remediationRan) {
       recordStepFix("Apply fixes", initial, final);
     }
+  } else if (!remediationRan && !dedupeProcess) {
+    final = initial;
   } else {
     const postFixAuditStep = withLabel(
       "Recheck after fixes",
       auditProcess.command,
       auditProcess.args,
-      [0, 1],
+      auditExitCodes,
     );
     const postFixAuditResult = await runStep(postFixAuditStep);
     const postFixSnapshot = parseAuditResult(
@@ -221,8 +220,6 @@ export async function runAuditFix(
     if (remediationRan) {
       recordStepFix("Apply fixes", initial, postFixSnapshot);
     }
-
-    const dedupeProcess = adapter.buildDedupeProcess(context);
 
     if (
       dedupeProcess &&
@@ -245,7 +242,7 @@ export async function runAuditFix(
         "Final audit",
         auditProcess.command,
         auditProcess.args,
-        [0, 1],
+        auditExitCodes,
       );
       const finalAuditResult = await runStep(finalAuditStep);
       final = parseAuditResult(finalAuditStep, finalAuditResult, () =>

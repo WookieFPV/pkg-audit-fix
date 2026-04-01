@@ -25,7 +25,7 @@ Usage:
 
 Options:
   --cwd <path>                         Project directory, defaults to process.cwd()
-  --manager <auto|pnpm|npm|bun>       Override package manager detection
+  --manager <auto|pnpm|npm|yarn|bun>  Override package manager detection
   --prod                               Audit production dependencies only
   --dev                                Audit development dependencies only
   --audit-level <low|moderate|high|critical>
@@ -87,6 +87,7 @@ function parseManager(value: string): PackageManagerOverride {
     value === "auto" ||
     value === "pnpm" ||
     value === "npm" ||
+    value === "yarn" ||
     value === "bun"
   ) {
     return value;
