@@ -29,14 +29,14 @@ Options:
   --prod                               Audit production dependencies only
   --dev                                Audit development dependencies only
   --audit-level <low|moderate|high|critical>
-                                       Minimum advisory level, defaults to moderate
+                                       Minimum advisory level, defaults to low
   --dedupe <auto|always|never>         Run a dedupe pass after fixes when supported, defaults to auto
   --dry-run                            Run initial and final audits only
   --json                               Emit a machine-readable final summary
   --verbose                            Stream subprocess output during successful runs
   --no-color                           Disable ANSI output
-  --version                            Print the package version
-  --help                               Print this help
+  -v, --version                        Print the package version
+  -h, --help                           Print this help
 `;
 
 interface CliOptions {
@@ -121,7 +121,7 @@ function parseArgs(argv: string[]): CliOptions {
     cwd: process.cwd(),
     manager: "auto",
     scope: "all",
-    threshold: "moderate",
+    threshold: "low",
     dedupe: "auto",
     dryRun: false,
     json: false,
@@ -134,12 +134,12 @@ function parseArgs(argv: string[]): CliOptions {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
 
-    if (arg === "--help") {
+    if (arg === "--help" || arg === "-h") {
       options.help = true;
       continue;
     }
 
-    if (arg === "--version") {
+    if (arg === "--version" || arg === "-v") {
       options.version = true;
       continue;
     }
