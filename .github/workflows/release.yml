@@ -39,6 +39,11 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.32.1
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -50,6 +55,9 @@ jobs:
 
       - name: Run test
         run: bun run test
+
+      - name: Run E2E test
+        run: bun run test:e2e
 
       - name: Run build
         run: bun run build
@@ -99,6 +107,11 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.32.1
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -110,6 +123,9 @@ jobs:
 
       - name: Run test
         run: bun run test
+
+      - name: Run E2E test
+        run: bun run test:e2e
 
       - name: Run build
         run: bun run build

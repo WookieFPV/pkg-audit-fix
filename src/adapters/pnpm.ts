@@ -52,7 +52,7 @@ export const pnpmAdapter: PackageManagerAdapter = {
   buildPostRemediationProcess() {
     return {
       command: "pnpm",
-      args: ["install"],
+      args: ["install", "--no-frozen-lockfile"],
     };
   },
 

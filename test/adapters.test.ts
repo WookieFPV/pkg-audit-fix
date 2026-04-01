@@ -31,6 +31,15 @@ describe("adapter commands", () => {
       command: "pnpm",
       args: ["dedupe"],
     });
+    expect(
+      pnpmAdapter.buildPostRemediationProcess({
+        threshold: "moderate",
+        scope: "all",
+      }),
+    ).toEqual({
+      command: "pnpm",
+      args: ["install", "--no-frozen-lockfile"],
+    });
   });
 
   it("builds npm commands with prod omission", () => {
