@@ -140,6 +140,7 @@ describe("adapter commands", () => {
         "npm",
         "audit",
         "--json",
+        "--no-deprecations",
         "--all",
         "--recursive",
         "--severity",
@@ -157,6 +158,7 @@ describe("adapter commands", () => {
         "npm",
         "audit",
         "--json",
+        "--no-deprecations",
         "--all",
         "--recursive",
         "--severity",
@@ -280,5 +282,26 @@ describe("adapter fixtures", () => {
     expect(before.entries[0]?.installedVersion).toBe("1.1.11");
     expect(before.entries[0]?.advisoryIds).toEqual(["GHSA-F886-M6HF-6M8V"]);
     expect(after.total).toBe(0);
+  });
+
+  it("parses yarn berry ndjson output", () => {
+    const before = yarnBerryAdapter.parseAudit(
+      [
+        '{"value":"brace-expansion","children":{"ID":1115540,"Issue":"brace-expansion: Zero-step sequence causes process hang and memory exhaustion","URL":"https://github.com/advisories/GHSA-f886-m6hf-6m8v","Severity":"moderate","Vulnerable Versions":"<1.1.13","Tree Versions":["1.1.12"],"Dependents":["minimatch@npm:3.1.2"]}}',
+        '{"value":"node-forge","children":{"ID":1115545,"Issue":"Forge has a basicConstraints bypass in its certificate chain verification (RFC 5280 violation)","URL":"https://github.com/advisories/GHSA-2328-f5f3-gj25","Severity":"high","Vulnerable Versions":"<=1.3.3","Tree Versions":["1.3.3"],"Dependents":["@expo/code-signing-certificates@npm:0.0.6"]}}',
+      ].join("\n"),
+      {
+        threshold: "moderate",
+        scope: "prod",
+      },
+    );
+
+    expect(before.total).toBe(2);
+    expect(before.entries.map((entry) => entry.packageName)).toEqual([
+      "brace-expansion",
+      "node-forge",
+    ]);
+    expect(before.entries[0]?.installedVersion).toBe("1.1.12");
+    expect(before.entries[0]?.advisoryIds).toEqual(["GHSA-F886-M6HF-6M8V"]);
   });
 });

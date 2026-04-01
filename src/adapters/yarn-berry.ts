@@ -3,12 +3,65 @@ import {
   createSnapshot,
   isRecord,
   normalizeSeverity,
+  parseJsonLines,
   parseJsonObject,
   uniqueSorted,
   vulnerabilityKey,
 } from "../core/normalize.js";
 import type { NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
+
+function parseBerryAuditOutput(stdout: string): Record<string, unknown> | null {
+  try {
+    return parseJsonObject(stdout, "yarn");
+  } catch {
+    return null;
+  }
+}
+
+function collectBerryNdjsonEntries(stdout: string): NormalizedVulnerability[] {
+  const events = parseJsonLines(stdout, "yarn");
+  const entries: NormalizedVulnerability[] = [];
+
+  for (const event of events) {
+    if (typeof event.value !== "string" || !isRecord(event.children)) {
+      continue;
+    }
+
+    const packageName = event.value;
+    const advisory = event.children;
+    const severity = normalizeSeverity(advisory.Severity);
+    const advisoryIds = collectAdvisoryIds(advisory, {
+      ghsaId: advisory.URL,
+    });
+    const title =
+      typeof advisory.Issue === "string" ? advisory.Issue : undefined;
+    const url = typeof advisory.URL === "string" ? advisory.URL : undefined;
+    const versions = uniqueSorted(
+      Array.isArray(advisory["Tree Versions"])
+        ? advisory["Tree Versions"].filter(
+            (version): version is string => typeof version === "string",
+          )
+        : [],
+    );
+
+    for (const installedVersion of versions.length > 0
+      ? versions
+      : ["unknown"]) {
+      entries.push({
+        key: vulnerabilityKey(packageName, installedVersion, advisoryIds),
+        packageName,
+        installedVersion,
+        severity,
+        advisoryIds,
+        title,
+        url,
+      });
+    }
+  }
+
+  return entries;
+}
 
 export const yarnBerryAdapter: PackageManagerAdapter = {
   manager: "yarn",
@@ -19,6 +72,7 @@ export const yarnBerryAdapter: PackageManagerAdapter = {
       "npm",
       "audit",
       "--json",
+      "--no-deprecations",
       "--all",
       "--recursive",
       "--severity",
@@ -53,8 +107,17 @@ export const yarnBerryAdapter: PackageManagerAdapter = {
   },
 
   parseAudit(stdout, context) {
-    const json = parseJsonObject(stdout, "yarn");
     const entries: NormalizedVulnerability[] = [];
+    const json = parseBerryAuditOutput(stdout);
+
+    if (!json) {
+      return createSnapshot({
+        manager: "yarn",
+        threshold: context.threshold,
+        scope: context.scope,
+        entries: collectBerryNdjsonEntries(stdout),
+      });
+    }
 
     for (const [packageName, advisories] of Object.entries(json)) {
       if (!Array.isArray(advisories)) {

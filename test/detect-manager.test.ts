@@ -1,3 +1,7 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { detectPackageManager } from "../src/core/detect-manager.js";
@@ -138,6 +142,41 @@ describe("detectPackageManager", () => {
       agent: "yarn@berry",
       source: "filesystem",
     });
+  });
+
+  it("promotes ambiguous yarn detection to berry when berry files are present", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pkg-audit-fix-"));
+
+    fs.writeFileSync(path.join(cwd, "yarn.lock"), "");
+    fs.writeFileSync(
+      path.join(cwd, ".yarnrc.yml"),
+      "nodeLinker: node-modules\n",
+    );
+
+    try {
+      const detectFn = vi
+        .fn()
+        .mockResolvedValue({ name: "yarn", agent: "yarn" });
+      const getUserAgentFn = vi.fn().mockResolvedValue(null);
+      const result = await detectPackageManager(
+        {
+          cwd,
+          override: "auto",
+        },
+        {
+          detectFn,
+          getUserAgentFn,
+        },
+      );
+
+      expect(result).toEqual({
+        manager: "yarn",
+        agent: "yarn@berry",
+        source: "filesystem",
+      });
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("throws with an override hint when no supported manager is found", async () => {

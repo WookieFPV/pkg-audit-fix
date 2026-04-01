@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import type {
   AgentName as DetectedAgentName,
   DetectResult as PackageManagerDetectResult,
@@ -17,6 +20,83 @@ const DETECTION_STRATEGIES = [
   "packageManager-field",
   "devEngines-field",
 ] as const;
+
+const YARN_BERRY_HINT_FILES = [".yarnrc.yml", ".pnp.cjs", ".pnp.js"] as const;
+const YARN_BERRY_HINT_DIRS = [".yarn"] as const;
+
+async function pathExists(
+  target: string,
+  type: "file" | "dir",
+): Promise<boolean> {
+  try {
+    const stat = await fs.stat(target);
+    return type === "file" ? stat.isFile() : stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function* lookupDirectories(cwd: string): Generator<string> {
+  let directory = path.resolve(cwd);
+  const { root } = path.parse(directory);
+
+  while (true) {
+    yield directory;
+
+    if (directory === root) {
+      break;
+    }
+
+    directory = path.dirname(directory);
+  }
+}
+
+async function detectYarnAgentFromFilesystem(
+  cwd: string,
+): Promise<Extract<PackageManagerAgent, "yarn" | "yarn@berry">> {
+  let sawBerryHint = false;
+
+  for (const directory of lookupDirectories(cwd)) {
+    const hasBerryHint = (
+      await Promise.all([
+        ...YARN_BERRY_HINT_FILES.map((entry) =>
+          pathExists(path.join(directory, entry), "file"),
+        ),
+        ...YARN_BERRY_HINT_DIRS.map((entry) =>
+          pathExists(path.join(directory, entry), "dir"),
+        ),
+      ])
+    ).some(Boolean);
+
+    if (hasBerryHint) {
+      sawBerryHint = true;
+    }
+
+    if (await pathExists(path.join(directory, "yarn.lock"), "file")) {
+      return hasBerryHint ? "yarn@berry" : "yarn";
+    }
+  }
+
+  return sawBerryHint ? "yarn@berry" : "yarn";
+}
+
+async function resolveDetectedAgent(
+  cwd: string,
+  detection: Pick<DetectionResult, "manager" | "agent"> | null,
+): Promise<Pick<DetectionResult, "manager" | "agent"> | null> {
+  if (!detection) {
+    return null;
+  }
+
+  if (detection.manager === "yarn" && detection.agent === "yarn") {
+    return {
+      manager: detection.manager,
+      agent: await detectYarnAgentFromFilesystem(cwd),
+    };
+  }
+
+  return detection;
+}
 
 function coerceDetection(
   value: DetectedAgentName | PackageManagerDetectResult | null | undefined,
@@ -63,7 +143,7 @@ async function detectAgentForOverride(
       strategies: [...DETECTION_STRATEGIES],
     }),
   ).catch(() => null);
-  const coerced = coerceDetection(detected);
+  const coerced = await resolveDetectedAgent(cwd, coerceDetection(detected));
 
   if (coerced?.manager === override) {
     return coerced.agent;
@@ -97,7 +177,10 @@ export async function detectPackageManager(
     cwd: input.cwd,
     strategies: [...DETECTION_STRATEGIES],
   }).catch(() => null);
-  const detectedManager = coerceDetection(detected);
+  const detectedManager = await resolveDetectedAgent(
+    input.cwd,
+    coerceDetection(detected),
+  );
 
   if (detectedManager) {
     return {
@@ -115,7 +198,10 @@ export async function detectPackageManager(
     userAgent = null;
   }
 
-  const userAgentManager = coerceDetection(userAgent);
+  const userAgentManager = await resolveDetectedAgent(
+    input.cwd,
+    coerceDetection(userAgent),
+  );
 
   if (userAgentManager) {
     return {
