@@ -29,7 +29,7 @@ pkg-audit-fix --json
 
 ## Manager Notes
 
-- `pnpm`: remediation runs `pnpm audit --json --fix` and then `pnpm install`.
+- `pnpm`: remediation runs `pnpm audit --json --fix` and then `pnpm install --no-frozen-lockfile`.
 - `npm`: remediation runs `npm audit fix --json`. Severity filtering is applied by `pkg-audit-fix` after parsing the audit report, because npm's `--audit-level` only changes npm's failure threshold.
 - `bun`: remediation runs `bun update --production` followed by a fresh audit. Bun is modeled as update-plus-reaudit in v1.
 
