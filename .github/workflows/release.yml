@@ -40,7 +40,7 @@ jobs:
           bun-version: latest
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.32.1
 
@@ -108,7 +108,7 @@ jobs:
           bun-version: latest
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.32.1
 
