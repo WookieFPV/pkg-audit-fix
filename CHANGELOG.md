@@ -1,5 +1,14 @@
 # pkg-audit-fix
 
+## 0.1.4
+
+### Patch Changes
+
+- ad16fe7: new default threshold "low" (was "moderate" before)
+- e03f2a9: add --show-commands flag to show which commands the CLI is executing
+- 47dcf1e: add support for yarn
+- e03f2a9: add --debug cli argument
+
 ## 0.1.3
 
 ### Patch Changes
