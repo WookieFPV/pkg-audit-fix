@@ -25,7 +25,7 @@ Usage:
 
 Options:
   --cwd <path>                         Project directory, defaults to process.cwd()
-  --manager <auto|pnpm|npm|bun>       Override package manager detection
+  --manager <auto|pnpm|npm|yarn|bun>  Override package manager detection
   --prod                               Audit production dependencies only
   --dev                                Audit development dependencies only
   --audit-level <low|moderate|high|critical>
@@ -33,6 +33,8 @@ Options:
   --dedupe <auto|always|never>         Run a dedupe pass after fixes when supported, defaults to auto
   --dry-run                            Run initial and final audits only
   --json                               Emit a machine-readable final summary
+  -d, --debug                          Print detected package manager and enable command echoing
+  --show-commands                      Print each package-manager command before it runs
   --verbose                            Stream subprocess output during successful runs
   --no-color                           Disable ANSI output
   -v, --version                        Print the package version
@@ -47,6 +49,8 @@ interface CliOptions {
   dedupe: DedupeMode;
   dryRun: boolean;
   json: boolean;
+  debug: boolean;
+  showCommands: boolean;
   verbose: boolean;
   color: boolean;
   help: boolean;
@@ -87,6 +91,7 @@ function parseManager(value: string): PackageManagerOverride {
     value === "auto" ||
     value === "pnpm" ||
     value === "npm" ||
+    value === "yarn" ||
     value === "bun"
   ) {
     return value;
@@ -125,6 +130,8 @@ function parseArgs(argv: string[]): CliOptions {
     dedupe: "auto",
     dryRun: false,
     json: false,
+    debug: false,
+    showCommands: false,
     verbose: false,
     color: !process.env.NO_COLOR,
     help: false,
@@ -172,6 +179,16 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--json") {
       options.json = true;
+      continue;
+    }
+
+    if (arg === "--debug" || arg === "-d") {
+      options.debug = true;
+      continue;
+    }
+
+    if (arg === "--show-commands") {
+      options.showCommands = true;
       continue;
     }
 
@@ -243,14 +260,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     process.env.NO_COLOR = "1";
   }
 
+  const showCommands = options.showCommands || options.verbose || options.debug;
+  const diagnosticsWrite = (text: string) =>
+    options.json ? process.stderr.write(text) : process.stdout.write(text);
   const stepReporter = createStepLifecycleReporter({
-    enabled: !options.json,
+    enabled: !options.json || options.debug || showCommands,
     color: options.color,
     verbose: options.verbose,
+    showCommands,
     isInteractive: Boolean(process.stdout.isTTY),
-    write: (text) => {
-      process.stdout.write(text);
-    },
+    write: diagnosticsWrite,
   });
 
   const result = await runAuditFix(
@@ -274,6 +293,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         onStepFail: (step) => {
           stepReporter.fail(step);
         },
+      },
+      onManagerDetected: (detection) => {
+        if (!options.debug) {
+          return;
+        }
+
+        diagnosticsWrite(`Detected package manager: ${detection.manager}\n`);
       },
     },
   );

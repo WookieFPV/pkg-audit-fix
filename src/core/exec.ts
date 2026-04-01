@@ -78,6 +78,11 @@ export const executeStep: ExecFunction = (step, options) =>
         return;
       }
 
+      if (step.acceptResult?.(result)) {
+        resolve(result);
+        return;
+      }
+
       const reason =
         signal !== null
           ? `Process terminated by signal ${signal}`

@@ -12,6 +12,8 @@ import type { PackageManagerAdapter } from "./base.js";
 
 export const npmAdapter: PackageManagerAdapter = {
   manager: "npm",
+  auditExitCodes: [0, 1],
+  remediationExitCodes: [0, 1],
 
   buildAuditProcess(context) {
     const args = ["audit", "--json"];

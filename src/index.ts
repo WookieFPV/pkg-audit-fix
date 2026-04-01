@@ -9,6 +9,7 @@ export type {
   NormalizedAuditSnapshot,
   NormalizedVulnerability,
   PackageManager,
+  PackageManagerAgent,
   PackageManagerOverride,
   RunAuditFixOptions,
   RunAuditFixResult,

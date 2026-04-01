@@ -1,0 +1,22 @@
+{
+  "brace-expansion": [
+    {
+      "id": 1098094,
+      "github_advisory_id": "GHSA-F886-M6HF-6M8V",
+      "severity": "high",
+      "title": "brace-expansion Regular Expression Denial of Service vulnerability",
+      "url": "https://github.com/advisories/GHSA-F886-M6HF-6M8V",
+      "versions": ["1.1.11"]
+    }
+  ],
+  "node-forge": [
+    {
+      "id": 1090701,
+      "cves": ["CVE-2022-24771"],
+      "severity": "moderate",
+      "title": "node-forge prototype pollution",
+      "url": "https://github.com/advisories/GHSA-5rrq-pxf6-6jx5",
+      "versions": ["0.10.0"]
+    }
+  ]
+}

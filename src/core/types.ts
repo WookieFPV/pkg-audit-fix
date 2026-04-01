@@ -1,4 +1,6 @@
-export type PackageManager = "pnpm" | "npm" | "bun";
+export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
+
+export type PackageManagerAgent = PackageManager | "yarn@berry" | "pnpm@6";
 
 export type PackageManagerOverride = "auto" | PackageManager;
 
@@ -44,9 +46,12 @@ export interface ProcessSpec {
   args: string[];
 }
 
+export type AcceptedExitCodes = number[];
+
 export interface CommandStep extends ProcessSpec {
   label: string;
-  acceptedExitCodes?: number[] | undefined;
+  acceptedExitCodes?: AcceptedExitCodes | undefined;
+  acceptResult?: ((result: CommandResult) => boolean) | undefined;
 }
 
 export interface CommandResult {
@@ -81,6 +86,7 @@ export interface StepLifecycleHooks {
 
 export interface DetectionResult {
   manager: PackageManager;
+  agent: PackageManagerAgent;
   source: DetectionSource;
 }
 

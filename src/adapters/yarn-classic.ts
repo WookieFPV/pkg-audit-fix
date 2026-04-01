@@ -4,76 +4,81 @@ import {
   createSnapshot,
   isRecord,
   normalizeSeverity,
-  parseJsonObject,
+  parseJsonLines,
   uniqueSorted,
   vulnerabilityKey,
 } from "../core/normalize.js";
 import type { NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
 
-export const pnpmAdapter: PackageManagerAdapter = {
-  manager: "pnpm",
-  auditExitCodes: [0, 1],
-  remediationExitCodes: [0, 1],
+function isClassicAuditOutput(stdout: string): boolean {
+  try {
+    const events = parseJsonLines(stdout, "yarn");
+
+    return events.some(
+      (event) =>
+        event.type === "auditSummary" || event.type === "auditAdvisory",
+    );
+  } catch {
+    return false;
+  }
+}
+
+export const yarnClassicAdapter: PackageManagerAdapter = {
+  manager: "yarn",
+  auditExitCodes: [0],
 
   buildAuditProcess(context) {
-    const args = ["audit", "--json", `--audit-level=${context.threshold}`];
+    const args = ["audit", "--json", "--level", context.threshold];
 
     if (context.scope === "prod") {
-      args.push("--prod");
+      args.push("--groups", "dependencies");
     } else if (context.scope === "dev") {
-      args.push("--dev");
+      args.push("--groups", "devDependencies");
     }
 
     return {
-      command: "pnpm",
+      command: "yarn",
       args,
     };
   },
 
-  buildRemediationProcess(context) {
-    const args = [
-      "audit",
-      "--json",
-      "--fix",
-      `--audit-level=${context.threshold}`,
-    ];
-
-    if (context.scope === "prod") {
-      args.push("--prod");
-    } else if (context.scope === "dev") {
-      args.push("--dev");
-    }
-
-    return {
-      command: "pnpm",
-      args,
-    };
+  buildRemediationProcess() {
+    return null;
   },
 
   buildPostRemediationProcess() {
-    return {
-      command: "pnpm",
-      args: ["install", "--no-frozen-lockfile"],
-    };
+    return null;
   },
 
   buildDedupeProcess() {
-    return {
-      command: "pnpm",
-      args: ["dedupe"],
-    };
+    return null;
+  },
+
+  isAuditResult(stdout) {
+    return isClassicAuditOutput(stdout);
   },
 
   parseAudit(stdout, context) {
-    const json = parseJsonObject(stdout, "pnpm");
-    const advisories = isRecord(json.advisories)
-      ? Object.values(json.advisories)
-      : [];
+    const events = parseJsonLines(stdout, "yarn");
     const entries: NormalizedVulnerability[] = [];
+    let counts = null;
 
-    for (const advisory of advisories) {
-      if (!isRecord(advisory)) {
+    for (const event of events) {
+      if (event.type === "auditSummary" && isRecord(event.data)) {
+        counts = countsFromMetadata(event.data.vulnerabilities);
+        continue;
+      }
+
+      if (event.type !== "auditAdvisory" || !isRecord(event.data)) {
+        continue;
+      }
+
+      const advisory = isRecord(event.data.advisory)
+        ? event.data.advisory
+        : null;
+
+      if (!advisory) {
         continue;
       }
 
@@ -93,15 +98,11 @@ export const pnpmAdapter: PackageManagerAdapter = {
         : [];
       const versions = uniqueSorted(
         findings.flatMap((finding) => {
-          if (!isRecord(finding)) {
+          if (!isRecord(finding) || typeof finding.version !== "string") {
             return [];
           }
 
-          if (typeof finding.version === "string") {
-            return [finding.version];
-          }
-
-          return [];
+          return [finding.version];
         }),
       );
 
@@ -121,13 +122,11 @@ export const pnpmAdapter: PackageManagerAdapter = {
     }
 
     return createSnapshot({
-      manager: "pnpm",
+      manager: "yarn",
       threshold: context.threshold,
       scope: context.scope,
       entries,
-      counts: countsFromMetadata(
-        isRecord(json.metadata) ? json.metadata.vulnerabilities : undefined,
-      ),
+      counts,
     });
   },
 };

@@ -9,6 +9,7 @@ describe("createStepLifecycleReporter", () => {
       enabled: true,
       color: true,
       verbose: false,
+      showCommands: false,
       isInteractive: false,
       write: (text) => {
         writes.push(text);
@@ -31,6 +32,7 @@ describe("createStepLifecycleReporter", () => {
       enabled: true,
       color: false,
       verbose: false,
+      showCommands: false,
       isInteractive: true,
       write: vi.fn(),
       createSpinner: vi.fn(() => spinner),
@@ -50,6 +52,7 @@ describe("createStepLifecycleReporter", () => {
       enabled: true,
       color: true,
       verbose: true,
+      showCommands: false,
       isInteractive: true,
       write: (text) => {
         writes.push(text);
@@ -62,5 +65,29 @@ describe("createStepLifecycleReporter", () => {
 
     expect(writes).toEqual(["Apply fixes...\n"]);
     expect(createSpinner).not.toHaveBeenCalled();
+  });
+
+  it("prints the command before the step when enabled", () => {
+    const writes: string[] = [];
+    const reporter = createStepLifecycleReporter({
+      enabled: true,
+      color: true,
+      verbose: false,
+      showCommands: true,
+      isInteractive: false,
+      write: (text) => {
+        writes.push(text);
+      },
+    });
+
+    reporter.start({
+      label: "Initial audit",
+      command: ["pnpm", "audit", "--filter", "@scope/pkg with space"],
+    });
+
+    expect(writes).toEqual([
+      "$ pnpm audit --filter '@scope/pkg with space'\n",
+      "Initial audit...\n",
+    ]);
   });
 });

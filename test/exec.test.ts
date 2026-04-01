@@ -25,6 +25,25 @@ describe("executeStep", () => {
     expect(result.stdout.trim()).toBe('{"ok":true}');
   });
 
+  it("accepts non-zero exits when the result matches a valid audit payload", async () => {
+    const result = await executeStep(
+      {
+        label: "initial audit",
+        command: process.execPath,
+        args: ["-e", "console.log('{\"ok\":true}'); process.exit(12)"],
+        acceptResult: (stepResult) =>
+          stepResult.stdout.trim() === '{"ok":true}',
+      },
+      {
+        cwd: repoRoot(),
+        verbose: false,
+      },
+    );
+
+    expect(result.exitCode).toBe(12);
+    expect(result.stdout.trim()).toBe('{"ok":true}');
+  });
+
   it("rejects unexpected non-zero exits", async () => {
     await expect(
       executeStep(
