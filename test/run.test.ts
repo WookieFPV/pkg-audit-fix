@@ -827,4 +827,135 @@ describe("runAuditFix", () => {
       },
     ]);
   });
+
+  it("retries yarn berry dedupe after adding quarantined packages to npmPreapprovedPackages", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pkg-audit-fix-yarn-"));
+    const steps: string[] = [];
+    let dedupeAttempts = 0;
+    const confirmPnpmMinimumReleaseAgeExclusions = vi.fn(async () => true);
+    const exec = vi.fn(async (step) => {
+      steps.push(step.label);
+
+      if (step.label === "Initial audit") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("yarn-berry", "before.json"),
+          stderr: "",
+          exitCode: 1,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Recheck after fixes") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("yarn-berry", "before.json"),
+          stderr: "",
+          exitCode: 1,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Consolidate dependency tree") {
+        if (dedupeAttempts === 0) {
+          dedupeAttempts += 1;
+          throw new CommandExecutionError(
+            step,
+            {
+              command: step.command,
+              args: step.args,
+              stdout: "",
+              stderr:
+                '➤ YN0016: │ lodash@npm:4.17.21: All versions satisfying "4.17.21" are quarantined\n',
+              exitCode: 1,
+              signal: null,
+            },
+            "Process exited with code 1",
+          );
+        }
+
+        dedupeAttempts += 1;
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Final audit") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("yarn-berry", "after.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      throw new Error(`Unexpected step: ${step.label}`);
+    });
+
+    fs.writeFileSync(
+      path.join(cwd, ".yarnrc.yml"),
+      'npmMinimalAgeGate: "3d"\nnpmPreapprovedPackages:\n  - "left-pad@1.0.0"\n',
+      "utf8",
+    );
+
+    try {
+      const result = await runAuditFix(
+        {
+          cwd,
+          manager: "yarn",
+          scope: "all",
+          threshold: "moderate",
+          dedupe: "always",
+          dryRun: false,
+          verbose: false,
+        },
+        {
+          confirmPnpmMinimumReleaseAgeExclusions,
+          detectManager: async () => ({
+            manager: "yarn",
+            agent: "yarn@berry",
+            source: "override",
+          }),
+          exec,
+        },
+      );
+
+      expect(confirmPnpmMinimumReleaseAgeExclusions).toHaveBeenCalledWith({
+        manager: "yarn",
+        configSetting: "npmPreapprovedPackages",
+        packages: ["lodash@4.17.21"],
+      });
+      expect(steps).toEqual([
+        "Initial audit",
+        "Recheck after fixes",
+        "Consolidate dependency tree",
+        "Consolidate dependency tree",
+        "Final audit",
+      ]);
+      expect(dedupeAttempts).toBe(2);
+      expect(fs.readFileSync(path.join(cwd, ".yarnrc.yml"), "utf8")).toContain(
+        '  - "lodash@4.17.21"',
+      );
+      expect(result.fixedCount).toBe(2);
+      expect(result.remainingCount).toBe(0);
+      expect(result.stepFixes).toEqual([
+        {
+          label: "Consolidate dependency tree",
+          fixedCount: 2,
+          remainingCount: 0,
+        },
+      ]);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });

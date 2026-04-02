@@ -245,8 +245,11 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 async function confirmPnpmMinimumReleaseAgeExclusions(input: {
-  manager: "pnpm" | "bun";
-  configSetting: "minimumReleaseAgeExclude" | "minimumReleaseAgeExcludes";
+  manager: "pnpm" | "bun" | "yarn";
+  configSetting:
+    | "minimumReleaseAgeExclude"
+    | "minimumReleaseAgeExcludes"
+    | "npmPreapprovedPackages";
   packages: string[];
   output: NodeJS.WriteStream;
 }): Promise<boolean> {

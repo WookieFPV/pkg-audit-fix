@@ -64,8 +64,11 @@ export interface CommandResult {
 }
 
 export interface ConfirmMinimumReleaseAgeExclusionsInput {
-  manager: "pnpm" | "bun";
-  configSetting: "minimumReleaseAgeExclude" | "minimumReleaseAgeExcludes";
+  manager: "pnpm" | "bun" | "yarn";
+  configSetting:
+    | "minimumReleaseAgeExclude"
+    | "minimumReleaseAgeExcludes"
+    | "npmPreapprovedPackages";
   packages: string[];
 }
 
@@ -171,16 +174,20 @@ export class CommandExecutionError extends Error {
 
 export class MinimumReleaseAgeDeclinedError extends Error {
   readonly step: CommandStep;
-  readonly manager: "pnpm" | "bun";
+  readonly manager: "pnpm" | "bun" | "yarn";
   readonly configSetting:
     | "minimumReleaseAgeExclude"
-    | "minimumReleaseAgeExcludes";
+    | "minimumReleaseAgeExcludes"
+    | "npmPreapprovedPackages";
   readonly packages: string[];
 
   constructor(input: {
     step: CommandStep;
-    manager: "pnpm" | "bun";
-    configSetting: "minimumReleaseAgeExclude" | "minimumReleaseAgeExcludes";
+    manager: "pnpm" | "bun" | "yarn";
+    configSetting:
+      | "minimumReleaseAgeExclude"
+      | "minimumReleaseAgeExcludes"
+      | "npmPreapprovedPackages";
     packages: string[];
   }) {
     const { step, manager, configSetting, packages } = input;

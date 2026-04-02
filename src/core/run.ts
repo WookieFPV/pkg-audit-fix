@@ -11,6 +11,11 @@ import {
   extractPnpmMinimumReleaseAgeExclusions,
   parsePnpmMinimumReleaseAgeExcludeConfig,
 } from "../adapters/pnpm.js";
+import {
+  extractYarnMinimumReleaseAgeExclusions,
+  parseYarnNpmPreapprovedPackagesConfig,
+  updateYarnNpmPreapprovedPackagesConfig,
+} from "../adapters/yarn-berry.js";
 import { detectPackageManager } from "./detect-manager.js";
 import { type ExecFunction, executeStep } from "./exec.js";
 import { diffFixedEntries, groupFixedPackages } from "./normalize.js";
@@ -257,6 +262,52 @@ export async function runAuditFix(
     fs.writeFileSync(bunfigPath, nextSource, "utf8");
   };
 
+  const readYarnNpmPreapprovedPackages = async (): Promise<string[]> => {
+    const yarnrcPath = path.join(options.cwd, ".yarnrc.yml");
+
+    try {
+      return parseYarnNpmPreapprovedPackagesConfig(
+        fs.readFileSync(yarnrcPath, "utf8"),
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return [];
+      }
+
+      throw error;
+    }
+  };
+
+  const writeYarnNpmPreapprovedPackages = async (
+    packages: string[],
+  ): Promise<void> => {
+    const yarnrcPath = path.join(options.cwd, ".yarnrc.yml");
+    let currentSource = "";
+
+    try {
+      currentSource = fs.readFileSync(yarnrcPath, "utf8");
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        error.code !== "ENOENT"
+      ) {
+        throw error;
+      }
+    }
+
+    const nextSource = updateYarnNpmPreapprovedPackagesConfig(
+      currentSource,
+      packages,
+    );
+
+    fs.writeFileSync(yarnrcPath, nextSource, "utf8");
+  };
+
   const recoverMinimumReleaseAgeFailure = async (
     error: unknown,
     step: CommandStep,
@@ -269,7 +320,10 @@ export async function runAuditFix(
     }
 
     let manager: PackageManager;
-    let configSetting: "minimumReleaseAgeExclude" | "minimumReleaseAgeExcludes";
+    let configSetting:
+      | "minimumReleaseAgeExclude"
+      | "minimumReleaseAgeExcludes"
+      | "npmPreapprovedPackages";
     let requestedExclusions: { specifier: string }[];
     let currentExclusions: string[];
 
@@ -302,6 +356,13 @@ export async function runAuditFix(
       configSetting = "minimumReleaseAgeExcludes";
       requestedExclusions = extractBunMinimumReleaseAgeExclusions(error.result);
       currentExclusions = await readBunMinimumReleaseAgeExcludes();
+    } else if (detection.agent === "yarn@berry") {
+      manager = "yarn";
+      configSetting = "npmPreapprovedPackages";
+      requestedExclusions = extractYarnMinimumReleaseAgeExclusions(
+        error.result,
+      );
+      currentExclusions = await readYarnNpmPreapprovedPackages();
     } else {
       return null;
     }
@@ -357,16 +418,29 @@ export async function runAuditFix(
         ]),
       );
     } else {
-      await runActionStep(
-        {
-          label: "Update bun minimumReleaseAgeExcludes",
-          command: "bun",
-          args: ["update"],
-        },
-        async () => {
-          await writeBunMinimumReleaseAgeExcludes(updatedExclusions);
-        },
-      );
+      if (manager === "bun") {
+        await runActionStep(
+          {
+            label: "Update bun minimumReleaseAgeExcludes",
+            command: "bun",
+            args: ["update"],
+          },
+          async () => {
+            await writeBunMinimumReleaseAgeExcludes(updatedExclusions);
+          },
+        );
+      } else {
+        await runActionStep(
+          {
+            label: "Update yarn npmPreapprovedPackages",
+            command: "yarn",
+            args: ["config", "set", "npmPreapprovedPackages"],
+          },
+          async () => {
+            await writeYarnNpmPreapprovedPackages(updatedExclusions);
+          },
+        );
+      }
     }
 
     try {
@@ -501,12 +575,13 @@ export async function runAuditFix(
       })
     ) {
       dedupeRan = true;
-      await runStep(
-        withLabel(
-          "Consolidate dependency tree",
-          dedupeProcess.command,
-          dedupeProcess.args,
-        ),
+      const dedupeStep = withLabel(
+        "Consolidate dependency tree",
+        dedupeProcess.command,
+        dedupeProcess.args,
+      );
+      await runStep(dedupeStep, (error) =>
+        recoverMinimumReleaseAgeFailure(error, dedupeStep),
       );
 
       const finalAuditStep = withLabel(

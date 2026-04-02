@@ -12,7 +12,12 @@ import {
   parsePnpmMinimumReleaseAgeExcludeConfig,
   pnpmAdapter,
 } from "../src/adapters/pnpm.js";
-import { yarnBerryAdapter } from "../src/adapters/yarn-berry.js";
+import {
+  extractYarnMinimumReleaseAgeExclusions,
+  parseYarnNpmPreapprovedPackagesConfig,
+  updateYarnNpmPreapprovedPackagesConfig,
+  yarnBerryAdapter,
+} from "../src/adapters/yarn-berry.js";
 import { yarnClassicAdapter } from "../src/adapters/yarn-classic.js";
 import { readFixture } from "./helpers.js";
 
@@ -332,6 +337,51 @@ describe("adapter fixtures", () => {
     );
     expect(updateBunMinimumReleaseAgeExcludesConfig("", ["chalk@5.4.0"])).toBe(
       '[install]\nminimumReleaseAgeExcludes = ["chalk@5.4.0"]\n',
+    );
+  });
+
+  it("extracts too-new yarn berry packages from quarantined resolution errors", () => {
+    const exclusions = extractYarnMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr:
+        '➤ YN0016: │ lodash@npm:4.17.21: All versions satisfying "4.17.21" are quarantined\n➤ YN0016: │ @types/lodash@npm:^4.17.20: All versions satisfying "^4.17.20" are quarantined\n',
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "lodash",
+        version: "4.17.21",
+        specifier: "lodash@4.17.21",
+      },
+      {
+        packageName: "@types/lodash",
+        version: "^4.17.20",
+        specifier: "@types/lodash@^4.17.20",
+      },
+    ]);
+  });
+
+  it("parses and updates yarn npmPreapprovedPackages config output", () => {
+    const source = [
+      'npmMinimalAgeGate: "3d"',
+      "npmPreapprovedPackages:",
+      '  - "left-pad@1.0.0"',
+      "",
+      "nodeLinker: node-modules",
+      "",
+    ].join("\n");
+
+    expect(parseYarnNpmPreapprovedPackagesConfig(source)).toEqual([
+      "left-pad@1.0.0",
+    ]);
+    expect(
+      updateYarnNpmPreapprovedPackagesConfig(source, [
+        "left-pad@1.0.0",
+        "lodash@4.17.21",
+      ]),
+    ).toContain('  - "lodash@4.17.21"');
+    expect(updateYarnNpmPreapprovedPackagesConfig("", ["lodash@4.17.21"])).toBe(
+      'npmPreapprovedPackages:\n  - "lodash@4.17.21"\n',
     );
   });
 

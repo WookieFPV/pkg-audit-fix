@@ -11,6 +11,12 @@ import {
 import type { NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
 
+export interface YarnMinimumReleaseAgeExclusion {
+  packageName: string;
+  version: string;
+  specifier: string;
+}
+
 function isBerryAuditOutput(stdout: string): boolean {
   if (parseBerryAuditOutput(stdout)) {
     return true;
@@ -77,6 +83,155 @@ function collectBerryNdjsonEntries(stdout: string): NormalizedVulnerability[] {
   }
 
   return entries;
+}
+
+function parseYamlScalar(value: string): string {
+  const trimmed = value.trim();
+
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+}
+
+function findRootYamlKeyRange(
+  source: string,
+  key: string,
+): {
+  start: number;
+  end: number;
+  lineEnd: number;
+  value: string;
+} | null {
+  const keyPattern = new RegExp(`^${key}:([^\\n\\r]*)`, "m");
+  const match = keyPattern.exec(source);
+
+  if (!match || match.index === undefined) {
+    return null;
+  }
+
+  const start = match.index;
+  const lineEnd = source.indexOf("\n", start);
+  const resolvedLineEnd = lineEnd === -1 ? source.length : lineEnd;
+  const blockStart =
+    resolvedLineEnd === source.length ? source.length : lineEnd + 1;
+  const nextRootKey = /^(?![\s#-])[^:\n\r]+:/m.exec(source.slice(blockStart));
+  const end =
+    nextRootKey && nextRootKey.index !== undefined
+      ? blockStart + nextRootKey.index
+      : source.length;
+
+  return {
+    start,
+    end,
+    lineEnd: resolvedLineEnd,
+    value: match[1] ?? "",
+  };
+}
+
+export function extractYarnMinimumReleaseAgeExclusions(result: {
+  stdout: string;
+  stderr: string;
+}): YarnMinimumReleaseAgeExclusion[] {
+  const seen = new Set<string>();
+  const exclusions: YarnMinimumReleaseAgeExclusion[] = [];
+  const pushExclusion = (packageName: string, version: string) => {
+    const specifier = `${packageName}@${version}`;
+
+    if (seen.has(specifier)) {
+      return;
+    }
+
+    seen.add(specifier);
+    exclusions.push({
+      packageName,
+      version,
+      specifier,
+    });
+  };
+
+  for (const source of [result.stdout, result.stderr]) {
+    const matches = source.matchAll(
+      /YN0016:.*?([@a-zA-Z0-9._/-]+)@npm:[^:\s]+: All versions satisfying "([^"]+)" are quarantined/g,
+    );
+
+    for (const match of matches) {
+      const packageName = match[1];
+      const version = match[2];
+
+      if (!packageName || !version) {
+        continue;
+      }
+
+      pushExclusion(packageName, version);
+    }
+  }
+
+  return exclusions;
+}
+
+export function parseYarnNpmPreapprovedPackagesConfig(
+  source: string,
+): string[] {
+  const keyRange = findRootYamlKeyRange(source, "npmPreapprovedPackages");
+
+  if (!keyRange) {
+    return [];
+  }
+
+  const inlineValue = keyRange.value.trim();
+
+  if (inlineValue.startsWith("[") && inlineValue.endsWith("]")) {
+    const rawEntries = inlineValue.slice(1, -1).trim();
+
+    if (rawEntries.length === 0) {
+      return [];
+    }
+
+    return rawEntries
+      .split(",")
+      .map((entry) => parseYamlScalar(entry))
+      .filter((entry) => entry.length > 0);
+  }
+
+  const lines = source
+    .slice(keyRange.lineEnd, keyRange.end)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "))
+    .map((line) => parseYamlScalar(line.slice(2)))
+    .filter((line) => line.length > 0);
+
+  return lines;
+}
+
+export function updateYarnNpmPreapprovedPackagesConfig(
+  source: string,
+  packages: string[],
+): string {
+  const newline = source.includes("\r\n") ? "\r\n" : "\n";
+  const block =
+    packages.length === 0
+      ? "npmPreapprovedPackages: []"
+      : `npmPreapprovedPackages:${newline}${packages.map((entry) => `  - ${JSON.stringify(entry)}`).join(newline)}`;
+  const existingKey = findRootYamlKeyRange(source, "npmPreapprovedPackages");
+
+  if (existingKey) {
+    return `${source.slice(0, existingKey.start)}${block}${source.slice(existingKey.end)}`;
+  }
+
+  const prefix =
+    source.length === 0
+      ? ""
+      : source.endsWith("\n") || source.endsWith("\r")
+        ? ""
+        : newline;
+
+  return `${source}${prefix}${block}${newline}`;
 }
 
 export const yarnBerryAdapter: PackageManagerAdapter = {
