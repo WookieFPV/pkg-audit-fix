@@ -55,4 +55,4 @@ bun run changeset
 - Commit the generated changeset file with the code change it describes.
 - Configure npm trusted publishing for `pkg-audit-fix` against `.github/workflows/release.yml`.
 - The release workflow on `main` uses Changesets to open or update a release PR.
-- npm publishing happens only when that release PR is merged, using GitHub Actions OIDC without an `NPM_TOKEN` secret.
+- When that release PR is merged, the publish job uses GitHub Actions OIDC to publish to npm and also creates the matching GitHub release.

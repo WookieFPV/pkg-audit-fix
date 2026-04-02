@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: write
       id-token: write
     env:
       CI: true
@@ -133,5 +133,11 @@ jobs:
       - name: Validate package
         run: bun run package:check
 
-      - name: Publish to npm
-        run: bun run release
+      - name: Publish to npm and create GitHub release
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: bun run release
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
