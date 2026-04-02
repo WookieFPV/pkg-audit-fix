@@ -28,7 +28,7 @@ const builtCliPath = path.join(root, "dist", "cli.mjs");
 const buildRunner = "bun";
 const nodeCommand = process.platform === "win32" ? "node.exe" : "node";
 const shellCommand = process.platform === "win32" ? "cmd.exe" : "zsh";
-const ptyCommand = process.platform === "win32" ? null : "expect";
+const ptyCommand = resolvePtyCommand();
 const berryVersion = "4.13.0";
 const MINIMUM_AGE_WINDOW_DAYS = 30;
 const RECENT_PACKAGE_MAX_AGE_DAYS = 14;
@@ -168,6 +168,14 @@ function isCommandAvailable(command: string): boolean {
       stdio: "ignore",
     }).status === 0
   );
+}
+
+function resolvePtyCommand(): string | null {
+  if (process.platform === "win32") {
+    return null;
+  }
+
+  return isCommandAvailable("expect") ? "expect" : null;
 }
 
 function buildEnvOverrides(projectDir: string): EnvMap {
