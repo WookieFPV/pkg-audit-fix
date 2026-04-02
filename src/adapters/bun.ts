@@ -166,7 +166,7 @@ export function extractBunMinimumReleaseAgeExclusions(result: {
   const seen = new Set<string>();
   const exclusions: BunMinimumReleaseAgeExclusion[] = [];
   const pushExclusion = (packageName: string, version: string) => {
-    const specifier = `${packageName}@${version}`;
+    const specifier = packageName;
 
     if (seen.has(specifier)) {
       return;
@@ -181,13 +181,28 @@ export function extractBunMinimumReleaseAgeExclusions(result: {
   };
 
   for (const source of [result.stdout, result.stderr]) {
-    const matches = source.matchAll(
+    const specifierMatches = source.matchAll(
       /No version matching ["']([^"']+)["'] found for specifier ["']([^"']+)["'] \(but package exists\)/g,
     );
 
-    for (const match of matches) {
+    for (const match of specifierMatches) {
       const version = match[1];
       const packageName = match[2];
+
+      if (!packageName || !version) {
+        continue;
+      }
+
+      pushExclusion(packageName, version);
+    }
+
+    const minimumAgeMatches = source.matchAll(
+      /No version matching ["']([^"']+)["'] found for specifier ["']([^"']+)["'] \(blocked by minimum-release-age: .*?\)/g,
+    );
+
+    for (const match of minimumAgeMatches) {
+      const packageName = match[1];
+      const version = match[2];
 
       if (!packageName || !version) {
         continue;

@@ -296,6 +296,7 @@ describe("adapter fixtures", () => {
       stderr: [
         'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)',
         'error: No version matching "^4.18.0" found for specifier "lodash" (but package exists)',
+        'error: No version matching "brace-expansion" found for specifier "^1.1.11" (blocked by minimum-release-age: 2592000 seconds)',
       ].join("\n"),
     });
 
@@ -303,12 +304,17 @@ describe("adapter fixtures", () => {
       {
         packageName: "chalk",
         version: "5.4.0",
-        specifier: "chalk@5.4.0",
+        specifier: "chalk",
       },
       {
         packageName: "lodash",
         version: "^4.18.0",
-        specifier: "lodash@^4.18.0",
+        specifier: "lodash",
+      },
+      {
+        packageName: "brace-expansion",
+        version: "^1.1.11",
+        specifier: "brace-expansion",
       },
     ]);
   });
@@ -317,7 +323,7 @@ describe("adapter fixtures", () => {
     const source = [
       "[install]",
       "minimumReleaseAge = 259200",
-      'minimumReleaseAgeExcludes = ["left-pad@1.0.0"]',
+      'minimumReleaseAgeExcludes = ["left-pad"]',
       "",
       "[test]",
       'root = "./test"',
@@ -325,18 +331,13 @@ describe("adapter fixtures", () => {
     ].join("\n");
 
     expect(parseBunMinimumReleaseAgeExcludesConfig(source)).toEqual([
-      "left-pad@1.0.0",
+      "left-pad",
     ]);
     expect(
-      updateBunMinimumReleaseAgeExcludesConfig(source, [
-        "left-pad@1.0.0",
-        "chalk@5.4.0",
-      ]),
-    ).toContain(
-      'minimumReleaseAgeExcludes = ["left-pad@1.0.0", "chalk@5.4.0"]',
-    );
-    expect(updateBunMinimumReleaseAgeExcludesConfig("", ["chalk@5.4.0"])).toBe(
-      '[install]\nminimumReleaseAgeExcludes = ["chalk@5.4.0"]\n',
+      updateBunMinimumReleaseAgeExcludesConfig(source, ["left-pad", "chalk"]),
+    ).toContain('minimumReleaseAgeExcludes = ["left-pad", "chalk"]');
+    expect(updateBunMinimumReleaseAgeExcludesConfig("", ["chalk"])).toBe(
+      '[install]\nminimumReleaseAgeExcludes = ["chalk"]\n',
     );
   });
 

@@ -466,7 +466,7 @@ describe("runAuditFix", () => {
 
     fs.writeFileSync(
       path.join(cwd, "bunfig.toml"),
-      '[install]\nminimumReleaseAgeExcludes = ["left-pad@1.0.0"]\n',
+      '[install]\nminimumReleaseAgeExcludes = ["left-pad"]\n',
       "utf8",
     );
 
@@ -495,7 +495,7 @@ describe("runAuditFix", () => {
       expect(confirmPnpmMinimumReleaseAgeExclusions).toHaveBeenCalledWith({
         manager: "bun",
         configSetting: "minimumReleaseAgeExcludes",
-        packages: ["chalk@5.4.0"],
+        packages: ["chalk"],
       });
       expect(steps).toEqual([
         "Initial audit",
@@ -505,7 +505,7 @@ describe("runAuditFix", () => {
       ]);
       expect(remediationAttempts).toBe(2);
       expect(fs.readFileSync(path.join(cwd, "bunfig.toml"), "utf8")).toContain(
-        'minimumReleaseAgeExcludes = ["left-pad@1.0.0", "chalk@5.4.0"]',
+        'minimumReleaseAgeExcludes = ["left-pad", "chalk"]',
       );
       expect(result.fixedCount).toBe(2);
       expect(result.remainingCount).toBe(0);
