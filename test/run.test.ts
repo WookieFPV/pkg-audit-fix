@@ -430,8 +430,10 @@ describe("runAuditFix", () => {
               command: step.command,
               args: step.args,
               stdout: "",
-              stderr:
-                'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)\n',
+              stderr: [
+                "error: minimum-release-age prevented resolving fresh releases",
+                'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)',
+              ].join("\n"),
               exitCode: 1,
               signal: null,
             },
@@ -545,10 +547,9 @@ describe("runAuditFix", () => {
               stderr: [
                 "Resolving dependencies",
                 "Resolved, downloaded and extracted [4]",
-                'error: No version matching "brace-expansion" found for specifier "^1.1.13" (blocked by minimum-release-age: 2592000 seconds)',
+                'error: No version matching "brace-expansion" found for specifier "^1.1.13" (all versions blocked by minimum-release-age)',
                 "",
                 'error: No version matching "typescript" found for specifier "6.0.2" (blocked by minimum-release-age: 2592000 seconds)',
-                "error: brace-expansion@^1.1.13 failed to resolve",
                 "error: typescript@6.0.2 failed to resolve",
               ].join("\n"),
               exitCode: 1,

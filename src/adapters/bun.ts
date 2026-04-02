@@ -196,23 +196,10 @@ export function extractBunMinimumReleaseAgeExclusions(result: {
   };
 
   for (const source of [result.stdout, result.stderr]) {
-    const specifierMatches = source.matchAll(
-      /No version matching ["']([^"']+)["'] found for specifier ["']([^"']+)["'] \(but package exists\)/g,
-    );
-
-    for (const match of specifierMatches) {
-      const version = match[1];
-      const packageName = match[2];
-
-      if (!packageName || !version) {
-        continue;
-      }
-
-      pushExclusion(packageName, version);
-    }
+    const hasMinimumReleaseAgeSignal = source.includes("minimum-release-age");
 
     const minimumAgeMatches = source.matchAll(
-      /No version matching ["']([^"']+)["'] found for specifier ["']([^"']+)["'] \(blocked by minimum-release-age: .*?\)/g,
+      /No version matching ["']([^"']+)["'] found for specifier ["']([^"']+)["'] \((?:blocked by minimum-release-age: .*?|all versions blocked by minimum-release-age)\)/g,
     );
 
     for (const match of minimumAgeMatches) {
@@ -226,8 +213,23 @@ export function extractBunMinimumReleaseAgeExclusions(result: {
       pushExclusion(packageName, version);
     }
 
-    if (!source.includes("minimum-release-age")) {
+    if (!hasMinimumReleaseAgeSignal) {
       continue;
+    }
+
+    const specifierMatches = source.matchAll(
+      /No version matching ["']([^"']+)["'] found for specifier ["']([^"']+)["'] \(but package exists\)/g,
+    );
+
+    for (const match of specifierMatches) {
+      const version = match[1];
+      const packageName = match[2];
+
+      if (!packageName || !version) {
+        continue;
+      }
+
+      pushExclusion(packageName, version);
     }
 
     const failedResolutionMatches = source.matchAll(

@@ -290,10 +290,21 @@ describe("adapter fixtures", () => {
     ).toEqual(["lodash@4.18.1", "chalk@5.4.0"]);
   });
 
-  it("extracts too-new bun update packages from error text", () => {
+  it("ignores bun non-age resolution failures that only say package exists", () => {
+    const exclusions = extractBunMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr:
+        'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)',
+    });
+
+    expect(exclusions).toEqual([]);
+  });
+
+  it("extracts too-new bun update packages from minimum-age error text", () => {
     const exclusions = extractBunMinimumReleaseAgeExclusions({
       stdout: "",
       stderr: [
+        "error: minimum-release-age prevented resolving fresh releases",
         'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)',
         'error: No version matching "^4.18.0" found for specifier "lodash" (but package exists)',
         'error: No version matching "brace-expansion" found for specifier "^1.1.11" (blocked by minimum-release-age: 2592000 seconds)',
@@ -301,6 +312,11 @@ describe("adapter fixtures", () => {
     });
 
     expect(exclusions).toEqual([
+      {
+        packageName: "brace-expansion",
+        version: "^1.1.11",
+        specifier: "brace-expansion",
+      },
       {
         packageName: "chalk",
         version: "5.4.0",
@@ -311,9 +327,20 @@ describe("adapter fixtures", () => {
         version: "^4.18.0",
         specifier: "lodash",
       },
+    ]);
+  });
+
+  it("extracts bun minimum-age exclusions from all-versions-blocked lines", () => {
+    const exclusions = extractBunMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr:
+        'error: No version matching "brace-expansion" found for specifier "^1.1.13" (all versions blocked by minimum-release-age)',
+    });
+
+    expect(exclusions).toEqual([
       {
         packageName: "brace-expansion",
-        version: "^1.1.11",
+        version: "^1.1.13",
         specifier: "brace-expansion",
       },
     ]);
