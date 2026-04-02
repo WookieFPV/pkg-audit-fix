@@ -1,5 +1,11 @@
 # pkg-audit-fix
 
+## 0.2.0
+
+### Minor Changes
+
+- 6a1ed2c: add support to handle minimumReleaseAge by adding an expedition for package (if user accepts first)
+
 ## 0.1.4
 
 ### Patch Changes
