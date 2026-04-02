@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { bunAdapter } from "../src/adapters/bun.js";
 import { npmAdapter } from "../src/adapters/npm.js";
-import { pnpmAdapter } from "../src/adapters/pnpm.js";
+import {
+  extractPnpmMinimumReleaseAgeExclusions,
+  parsePnpmMinimumReleaseAgeExcludeConfig,
+  pnpmAdapter,
+} from "../src/adapters/pnpm.js";
 import { yarnBerryAdapter } from "../src/adapters/yarn-berry.js";
 import { yarnClassicAdapter } from "../src/adapters/yarn-classic.js";
 import { readFixture } from "./helpers.js";
@@ -40,7 +44,7 @@ describe("adapter commands", () => {
       }),
     ).toEqual({
       command: "pnpm",
-      args: ["install", "--no-frozen-lockfile"],
+      args: ["install", "--no-frozen-lockfile", "--reporter", "ndjson"],
     });
   });
 
@@ -194,6 +198,86 @@ describe("adapter fixtures", () => {
     expect(before.entries).toHaveLength(3);
     expect(before.entries[0]?.advisoryIds).toContain("CVE-2026-33750");
     expect(after.total).toBe(0);
+  });
+
+  it("extracts too-new pnpm install packages from ndjson reporter output", () => {
+    const exclusions = extractPnpmMinimumReleaseAgeExclusions({
+      stdout: [
+        JSON.stringify({
+          name: "pnpm",
+          code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+          immatureVersion: "4.18.1",
+          package: {
+            name: "lodash",
+            version: ">=4.18.0",
+          },
+        }),
+      ].join("\n"),
+      stderr: [
+        JSON.stringify({
+          name: "pnpm",
+          err: {
+            code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+          },
+          immatureVersion: "5.4.0",
+          package: {
+            name: "chalk",
+            version: "^5.4.0",
+          },
+        }),
+        JSON.stringify({
+          name: "pnpm",
+          code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+          immatureVersion: "4.18.1",
+          packageMeta: {
+            name: "lodash",
+          },
+        }),
+      ].join("\n"),
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "lodash",
+        version: "4.18.1",
+        specifier: "lodash@4.18.1",
+      },
+      {
+        packageName: "chalk",
+        version: "5.4.0",
+        specifier: "chalk@5.4.0",
+      },
+    ]);
+  });
+
+  it("extracts too-new pnpm install packages from plain error text", () => {
+    const exclusions = extractPnpmMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr:
+        "ERR_PNPM_NO_MATURE_MATCHING_VERSION\nVersion 4.18.1 (released 10 hours ago) of lodash does not meet the minimumReleaseAge constraint\nVersion 5.4.0 (released 2 hours ago) of chalk does not meet the minimumReleaseAge constraint\n",
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "lodash",
+        version: "4.18.1",
+        specifier: "lodash@4.18.1",
+      },
+      {
+        packageName: "chalk",
+        version: "5.4.0",
+        specifier: "chalk@5.4.0",
+      },
+    ]);
+  });
+
+  it("parses pnpm minimumReleaseAgeExclude config output", () => {
+    expect(parsePnpmMinimumReleaseAgeExcludeConfig("null")).toEqual([]);
+    expect(
+      parsePnpmMinimumReleaseAgeExcludeConfig(
+        '["lodash@4.18.1","chalk@5.4.0"]',
+      ),
+    ).toEqual(["lodash@4.18.1", "chalk@5.4.0"]);
   });
 
   it("parses npm fixture snapshots", () => {

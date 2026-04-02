@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runAuditFix } from "../src/core/run.js";
+import {
+  CommandExecutionError,
+  type PnpmMinimumReleaseAgeDeclinedError,
+} from "../src/core/types.js";
 import { readFixture } from "./helpers.js";
 
 describe("runAuditFix", () => {
@@ -106,6 +110,290 @@ describe("runAuditFix", () => {
         remainingCount: 0,
       },
     ]);
+  });
+
+  it("retries pnpm install after adding too-new packages to minimumReleaseAgeExclude", async () => {
+    const steps: string[] = [];
+    const startedSteps: string[] = [];
+    const completedSteps: string[] = [];
+    let reinstallAttempts = 0;
+    const confirmPnpmMinimumReleaseAgeExclusions = vi.fn(async () => true);
+    const exec = vi.fn(async (step) => {
+      steps.push(step.label);
+
+      if (step.label === "Initial audit") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("pnpm", "before.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Apply fixes") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("pnpm", "before.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Reinstall dependencies") {
+        if (reinstallAttempts === 0) {
+          reinstallAttempts += 1;
+          throw new CommandExecutionError(
+            step,
+            {
+              command: step.command,
+              args: step.args,
+              stdout: "",
+              stderr: [
+                JSON.stringify({
+                  name: "pnpm",
+                  code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+                  immatureVersion: "4.18.1",
+                  package: {
+                    name: "lodash",
+                    version: ">=4.18.0",
+                  },
+                }),
+                JSON.stringify({
+                  name: "pnpm",
+                  code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+                  immatureVersion: "5.4.0",
+                  package: {
+                    name: "chalk",
+                    version: "^5.4.0",
+                  },
+                }),
+              ].join("\n"),
+              exitCode: 1,
+              signal: null,
+            },
+            "Process exited with code 1",
+          );
+        }
+
+        reinstallAttempts += 1;
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Read pnpm minimumReleaseAgeExclude") {
+        expect(step.args).toEqual([
+          "config",
+          "get",
+          "--location=project",
+          "--json",
+          "minimumReleaseAgeExclude",
+        ]);
+
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: '["left-pad@1.0.0"]',
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Update pnpm minimumReleaseAgeExclude") {
+        expect(step.args).toEqual([
+          "config",
+          "set",
+          "--location=project",
+          "--json",
+          "minimumReleaseAgeExclude",
+          '["left-pad@1.0.0","lodash@4.18.1","chalk@5.4.0"]',
+        ]);
+
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Final audit") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("pnpm", "after.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      throw new Error(`Unexpected step: ${step.label}`);
+    });
+
+    const result = await runAuditFix(
+      {
+        cwd: "/tmp/project",
+        manager: "pnpm",
+        scope: "prod",
+        threshold: "moderate",
+        dedupe: "never",
+        dryRun: false,
+        verbose: false,
+      },
+      {
+        confirmPnpmMinimumReleaseAgeExclusions,
+        detectManager: async () => ({
+          manager: "pnpm",
+          agent: "pnpm",
+          source: "override",
+        }),
+        exec,
+        hooks: {
+          onStepStart: (step) => {
+            startedSteps.push(step.label);
+          },
+          onStepComplete: (step) => {
+            completedSteps.push(step.label);
+          },
+        },
+      },
+    );
+
+    expect(confirmPnpmMinimumReleaseAgeExclusions).toHaveBeenCalledWith({
+      packages: ["lodash@4.18.1", "chalk@5.4.0"],
+    });
+    expect(steps).toEqual([
+      "Initial audit",
+      "Apply fixes",
+      "Reinstall dependencies",
+      "Read pnpm minimumReleaseAgeExclude",
+      "Update pnpm minimumReleaseAgeExclude",
+      "Reinstall dependencies",
+      "Final audit",
+    ]);
+    expect(startedSteps).toEqual([
+      "Initial audit",
+      "Apply fixes",
+      "Reinstall dependencies",
+      "Update pnpm minimumReleaseAgeExclude",
+      "Final audit",
+    ]);
+    expect(completedSteps).toEqual([
+      "Initial audit",
+      "Apply fixes",
+      "Update pnpm minimumReleaseAgeExclude",
+      "Reinstall dependencies",
+      "Final audit",
+    ]);
+    expect(reinstallAttempts).toBe(2);
+    expect(result.fixedCount).toBe(3);
+    expect(result.remainingCount).toBe(0);
+  });
+
+  it("fails with a concise minimumReleaseAge error when the prompt is declined", async () => {
+    const confirmPnpmMinimumReleaseAgeExclusions = vi.fn(async () => false);
+    const exec = vi.fn(async (step) => {
+      if (step.label === "Initial audit") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("pnpm", "before.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Apply fixes") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("pnpm", "before.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Reinstall dependencies") {
+        throw new CommandExecutionError(
+          step,
+          {
+            command: step.command,
+            args: step.args,
+            stdout: "",
+            stderr: JSON.stringify({
+              name: "pnpm",
+              code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+              immatureVersion: "4.18.1",
+              package: {
+                name: "lodash",
+                version: ">=4.18.0",
+              },
+            }),
+            exitCode: 1,
+            signal: null,
+          },
+          "Process exited with code 1",
+        );
+      }
+
+      if (step.label === "Read pnpm minimumReleaseAgeExclude") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "[]",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      throw new Error(`Unexpected step: ${step.label}`);
+    });
+
+    try {
+      await runAuditFix(
+        {
+          cwd: "/tmp/project",
+          manager: "pnpm",
+          scope: "prod",
+          threshold: "moderate",
+          dedupe: "never",
+          dryRun: false,
+          verbose: false,
+        },
+        {
+          confirmPnpmMinimumReleaseAgeExclusions,
+          detectManager: async () => ({
+            manager: "pnpm",
+            agent: "pnpm",
+            source: "override",
+          }),
+          exec,
+        },
+      );
+      throw new Error("Expected runAuditFix to reject");
+    } catch (error) {
+      const declinedError = error as PnpmMinimumReleaseAgeDeclinedError;
+
+      expect(declinedError.name).toBe("PnpmMinimumReleaseAgeDeclinedError");
+      expect(declinedError.packages).toEqual(["lodash@4.18.1"]);
+      expect(declinedError.step.label).toBe("Reinstall dependencies");
+    }
   });
 
   it("short-circuits when the initial audit is already clean", async () => {

@@ -7,6 +7,7 @@ export interface StepLifecycleReporter {
   start(step: StepEvent): void;
   complete(step: StepEvent): void;
   fail(step: StepEvent): void;
+  pause(): void;
 }
 
 interface CreateStepLifecycleReporterOptions {
@@ -23,6 +24,7 @@ interface SpinnerLike {
   start(): void;
   succeed(text?: string): void;
   fail(text?: string): void;
+  stop(): void;
 }
 
 function defaultCreateSpinner(text: string, color: boolean): SpinnerInstance {
@@ -47,16 +49,22 @@ export function createStepLifecycleReporter(
       start() {},
       complete() {},
       fail() {},
+      pause() {},
     };
   }
 
   const createSpinner = options.createSpinner ?? defaultCreateSpinner;
   const useSpinner = options.isInteractive && !options.verbose;
   let activeSpinner: SpinnerLike | null = null;
+  let activeStep: StepEvent | null = null;
+  const pausedSteps = new Set<string>();
 
   const runningText = (label: string) => `${label}...`;
   const successText = (step: StepEvent) => `${step.label} complete`;
   const failureText = (label: string) => `${label} failed`;
+  const fallbackSuccessText = (step: StepEvent) => `✔ ${successText(step)}\n`;
+  const fallbackFailureText = (step: StepEvent) =>
+    `✖ ${failureText(step.label)}\n`;
 
   return {
     start(step) {
@@ -71,6 +79,7 @@ export function createStepLifecycleReporter(
 
       activeSpinner = createSpinner(runningText(step.label), options.color);
       activeSpinner.start();
+      activeStep = step;
     },
 
     complete(step) {
@@ -78,8 +87,17 @@ export function createStepLifecycleReporter(
         return;
       }
 
-      activeSpinner?.succeed(successText(step));
-      activeSpinner = null;
+      if (activeSpinner && activeStep?.label === step.label) {
+        activeSpinner.succeed(successText(step));
+        activeSpinner = null;
+        activeStep = null;
+        return;
+      }
+
+      if (pausedSteps.has(step.label)) {
+        pausedSteps.delete(step.label);
+        options.write(fallbackSuccessText(step));
+      }
     },
 
     fail(step) {
@@ -87,8 +105,32 @@ export function createStepLifecycleReporter(
         return;
       }
 
-      activeSpinner?.fail(failureText(step.label));
+      if (activeSpinner && activeStep?.label === step.label) {
+        activeSpinner.fail(failureText(step.label));
+        activeSpinner = null;
+        activeStep = null;
+        return;
+      }
+
+      if (pausedSteps.has(step.label)) {
+        pausedSteps.delete(step.label);
+        options.write(fallbackFailureText(step));
+      }
+    },
+
+    pause() {
+      if (!useSpinner) {
+        return;
+      }
+
+      if (!activeSpinner || !activeStep) {
+        return;
+      }
+
+      pausedSteps.add(activeStep.label);
+      activeSpinner.stop();
       activeSpinner = null;
+      activeStep = null;
     },
   };
 }

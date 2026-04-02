@@ -8,8 +8,188 @@ import {
   uniqueSorted,
   vulnerabilityKey,
 } from "../core/normalize.js";
-import type { NormalizedVulnerability } from "../core/types.js";
+import type { CommandResult, NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
+
+const MINIMUM_RELEASE_AGE_ERROR_CODE = "ERR_PNPM_NO_MATURE_MATCHING_VERSION";
+
+export interface PnpmMinimumReleaseAgeExclusion {
+  packageName: string;
+  version: string;
+  specifier: string;
+}
+
+function parsePnpmReporterRecords(text: string): unknown[] {
+  const trimmed = text.trim();
+
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  const records = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as unknown];
+      } catch {
+        return [];
+      }
+    });
+
+  if (records.length > 0) {
+    return records;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}
+
+function readString(
+  object: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = object[key];
+  return typeof value === "string" ? value : null;
+}
+
+function readErrorCode(record: Record<string, unknown>): string | null {
+  const directCode = readString(record, "code");
+
+  if (directCode) {
+    return directCode;
+  }
+
+  if (!isRecord(record.err)) {
+    return null;
+  }
+
+  return readString(record.err, "code");
+}
+
+function readPackageName(record: Record<string, unknown>): string | null {
+  if (isRecord(record.package)) {
+    const packageName = readString(record.package, "name");
+
+    if (packageName) {
+      return packageName;
+    }
+  }
+
+  if (isRecord(record.packageMeta)) {
+    const packageName = readString(record.packageMeta, "name");
+
+    if (packageName) {
+      return packageName;
+    }
+  }
+
+  return null;
+}
+
+function readVersion(record: Record<string, unknown>): string | null {
+  const immatureVersion = readString(record, "immatureVersion");
+
+  if (immatureVersion) {
+    return immatureVersion;
+  }
+
+  if (isRecord(record.package)) {
+    const version = readString(record.package, "version");
+
+    if (version) {
+      return version;
+    }
+  }
+
+  return null;
+}
+
+export function extractPnpmMinimumReleaseAgeExclusions(
+  result: Pick<CommandResult, "stdout" | "stderr">,
+): PnpmMinimumReleaseAgeExclusion[] {
+  const seen = new Set<string>();
+  const exclusions: PnpmMinimumReleaseAgeExclusion[] = [];
+  const pushExclusion = (packageName: string, version: string) => {
+    const specifier = `${packageName}@${version}`;
+
+    if (seen.has(specifier)) {
+      return;
+    }
+
+    seen.add(specifier);
+    exclusions.push({
+      packageName,
+      version,
+      specifier,
+    });
+  };
+
+  for (const source of [result.stdout, result.stderr]) {
+    for (const record of parsePnpmReporterRecords(source)) {
+      if (!isRecord(record)) {
+        continue;
+      }
+
+      if (readErrorCode(record) !== MINIMUM_RELEASE_AGE_ERROR_CODE) {
+        continue;
+      }
+
+      const packageName = readPackageName(record);
+      const version = readVersion(record);
+
+      if (!packageName || !version) {
+        continue;
+      }
+
+      pushExclusion(packageName, version);
+    }
+
+    const messageMatches = source.matchAll(
+      /Version\s+(\S+)\s+\(released .*?\)\s+of\s+(.+?)\s+does not meet the minimumReleaseAge constraint/g,
+    );
+
+    for (const match of messageMatches) {
+      const version = match[1];
+      const packageName = match[2];
+
+      if (!packageName || !version) {
+        continue;
+      }
+
+      pushExclusion(packageName, version);
+    }
+  }
+
+  return exclusions;
+}
+
+export function parsePnpmMinimumReleaseAgeExcludeConfig(
+  stdout: string,
+): string[] {
+  const trimmed = stdout.trim();
+
+  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
+    return [];
+  }
+
+  const parsed = JSON.parse(trimmed) as unknown;
+
+  if (Array.isArray(parsed)) {
+    return parsed.filter((entry): entry is string => typeof entry === "string");
+  }
+
+  if (typeof parsed === "string") {
+    return [parsed];
+  }
+
+  return [];
+}
 
 export const pnpmAdapter: PackageManagerAdapter = {
   manager: "pnpm",
@@ -54,7 +234,7 @@ export const pnpmAdapter: PackageManagerAdapter = {
   buildPostRemediationProcess() {
     return {
       command: "pnpm",
-      args: ["install", "--no-frozen-lockfile"],
+      args: ["install", "--no-frozen-lockfile", "--reporter", "ndjson"],
     };
   },
 

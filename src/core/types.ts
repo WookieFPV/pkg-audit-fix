@@ -63,6 +63,14 @@ export interface CommandResult {
   signal: NodeJS.Signals | null;
 }
 
+export interface ConfirmPnpmMinimumReleaseAgeExclusionsInput {
+  packages: string[];
+}
+
+export type ConfirmPnpmMinimumReleaseAgeExclusions = (
+  input: ConfirmPnpmMinimumReleaseAgeExclusionsInput,
+) => Promise<boolean>;
+
 export interface RunAuditFixOptions {
   cwd: string;
   manager: PackageManagerOverride;
@@ -82,6 +90,7 @@ export interface StepLifecycleHooks {
   onStepStart?: ((event: StepEvent) => void) | undefined;
   onStepComplete?: ((event: StepEvent) => void) | undefined;
   onStepFail?: ((event: StepEvent) => void) | undefined;
+  onInteractivePrompt?: (() => void) | undefined;
 }
 
 export interface DetectionResult {
@@ -155,5 +164,21 @@ export class CommandExecutionError extends Error {
     this.name = "CommandExecutionError";
     this.step = step;
     this.result = result;
+  }
+}
+
+export class PnpmMinimumReleaseAgeDeclinedError extends Error {
+  readonly step: CommandStep;
+  readonly packages: string[];
+
+  constructor(step: CommandStep, packages: string[]) {
+    const packageList = packages.join(", ");
+    const pronoun = packages.length === 1 ? "it" : "them";
+    super(
+      `minimumReleaseAge blocked pnpm install for ${packageList}. Rerun and answer Y to add ${pronoun} to minimumReleaseAgeExclude automatically.`,
+    );
+    this.name = "PnpmMinimumReleaseAgeDeclinedError";
+    this.step = step;
+    this.packages = packages;
   }
 }

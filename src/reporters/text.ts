@@ -2,6 +2,7 @@ import { formatCount } from "../core/normalize.js";
 import {
   CommandExecutionError,
   ManagerDetectionError,
+  PnpmMinimumReleaseAgeDeclinedError,
   type RunAuditFixResult,
 } from "../core/types.js";
 
@@ -60,6 +61,10 @@ export function formatTextSummary(result: RunAuditFixResult): string {
 export function formatFailure(error: unknown): string {
   if (error instanceof ManagerDetectionError) {
     return error.message;
+  }
+
+  if (error instanceof PnpmMinimumReleaseAgeDeclinedError) {
+    return `Reason: ${error.message}`;
   }
 
   if (!(error instanceof CommandExecutionError)) {

@@ -1,10 +1,15 @@
 import { getAdapter } from "../adapters/index.js";
+import {
+  extractPnpmMinimumReleaseAgeExclusions,
+  parsePnpmMinimumReleaseAgeExcludeConfig,
+} from "../adapters/pnpm.js";
 import { detectPackageManager } from "./detect-manager.js";
 import { type ExecFunction, executeStep } from "./exec.js";
 import { diffFixedEntries, groupFixedPackages } from "./normalize.js";
 import type {
   CommandResult,
   CommandStep,
+  ConfirmPnpmMinimumReleaseAgeExclusions,
   DetectionResult,
   NormalizedAuditSnapshot,
   ProcessSpec,
@@ -13,7 +18,10 @@ import type {
   StepFixResult,
   StepLifecycleHooks,
 } from "./types.js";
-import { CommandExecutionError } from "./types.js";
+import {
+  CommandExecutionError,
+  PnpmMinimumReleaseAgeDeclinedError,
+} from "./types.js";
 
 function withLabel(
   label: string,
@@ -62,6 +70,9 @@ function shouldRunDedupe(input: {
 export async function runAuditFix(
   options: RunAuditFixOptions,
   dependencies: {
+    confirmPnpmMinimumReleaseAgeExclusions?:
+      | ConfirmPnpmMinimumReleaseAgeExclusions
+      | undefined;
     detectManager?: typeof detectPackageManager | undefined;
     exec?: ExecFunction | undefined;
     hooks?: StepLifecycleHooks | undefined;
@@ -88,6 +99,7 @@ export async function runAuditFix(
   const auditProcess = adapter.buildAuditProcess(context);
   const auditExitCodes = adapter.auditExitCodes ?? [0, 1];
   const stepFixes: StepFixResult[] = [];
+  const attemptedPnpmMinimumReleaseAgeExclusions = new Set<string>();
 
   const recordStepFix = (
     label: StepFixResult["label"],
@@ -101,28 +113,158 @@ export async function runAuditFix(
     });
   };
 
-  const runStep = async (step: CommandStep) => {
-    dependencies.hooks?.onStepStart?.({
-      label: step.label,
-      command: [step.command, ...step.args],
-    });
+  const runStep = async (
+    step: CommandStep,
+    recoverError?:
+      | ((error: unknown) => Promise<CommandResult | null>)
+      | undefined,
+    stepOptions: { silent?: boolean } = {},
+  ) => {
+    if (!stepOptions.silent) {
+      dependencies.hooks?.onStepStart?.({
+        label: step.label,
+        command: [step.command, ...step.args],
+      });
+    }
 
     try {
       const result = await exec(step, {
         cwd: options.cwd,
         verbose: options.verbose,
       });
-      dependencies.hooks?.onStepComplete?.({
-        label: step.label,
-        command: [step.command, ...step.args],
-      });
+      if (!stepOptions.silent) {
+        dependencies.hooks?.onStepComplete?.({
+          label: step.label,
+          command: [step.command, ...step.args],
+        });
+      }
       return result;
     } catch (error) {
-      dependencies.hooks?.onStepFail?.({
-        label: step.label,
-        command: [step.command, ...step.args],
+      let finalError = error;
+
+      if (recoverError) {
+        try {
+          const recoveredResult = await recoverError(error);
+
+          if (recoveredResult) {
+            if (!stepOptions.silent) {
+              dependencies.hooks?.onStepComplete?.({
+                label: step.label,
+                command: [step.command, ...step.args],
+              });
+            }
+            return recoveredResult;
+          }
+        } catch (recoveryError) {
+          finalError = recoveryError;
+        }
+      }
+
+      if (!stepOptions.silent) {
+        dependencies.hooks?.onStepFail?.({
+          label: step.label,
+          command: [step.command, ...step.args],
+        });
+      }
+      throw finalError;
+    }
+  };
+
+  const recoverPnpmMinimumReleaseAgeInstallFailure = async (
+    error: unknown,
+    step: CommandStep,
+  ): Promise<CommandResult | null> => {
+    if (
+      detection.manager !== "pnpm" ||
+      !(error instanceof CommandExecutionError) ||
+      !dependencies.confirmPnpmMinimumReleaseAgeExclusions
+    ) {
+      return null;
+    }
+
+    const requestedExclusions = extractPnpmMinimumReleaseAgeExclusions(
+      error.result,
+    );
+
+    if (requestedExclusions.length === 0) {
+      return null;
+    }
+
+    const getConfigStep = withLabel(
+      "Read pnpm minimumReleaseAgeExclude",
+      "pnpm",
+      [
+        "config",
+        "get",
+        "--location=project",
+        "--json",
+        "minimumReleaseAgeExclude",
+      ],
+    );
+    const currentConfigResult = await runStep(getConfigStep, undefined, {
+      silent: true,
+    });
+    const currentExclusions = parsePnpmMinimumReleaseAgeExcludeConfig(
+      currentConfigResult.stdout,
+    );
+    const currentExclusionSet = new Set(currentExclusions);
+    const nextExclusions = requestedExclusions.filter(
+      (entry) =>
+        !currentExclusionSet.has(entry.specifier) &&
+        !attemptedPnpmMinimumReleaseAgeExclusions.has(entry.specifier),
+    );
+
+    if (nextExclusions.length === 0) {
+      return null;
+    }
+
+    dependencies.hooks?.onInteractivePrompt?.();
+    const shouldRetry =
+      await dependencies.confirmPnpmMinimumReleaseAgeExclusions({
+        packages: nextExclusions.map((entry) => entry.specifier),
       });
-      throw error;
+
+    if (!shouldRetry) {
+      throw new PnpmMinimumReleaseAgeDeclinedError(
+        step,
+        nextExclusions.map((entry) => entry.specifier),
+      );
+    }
+
+    const updatedExclusions = [...currentExclusions];
+
+    for (const entry of nextExclusions) {
+      attemptedPnpmMinimumReleaseAgeExclusions.add(entry.specifier);
+      updatedExclusions.push(entry.specifier);
+    }
+
+    await runStep(
+      withLabel("Update pnpm minimumReleaseAgeExclude", "pnpm", [
+        "config",
+        "set",
+        "--location=project",
+        "--json",
+        "minimumReleaseAgeExclude",
+        JSON.stringify(updatedExclusions),
+      ]),
+    );
+
+    try {
+      return await exec(step, {
+        cwd: options.cwd,
+        verbose: options.verbose,
+      });
+    } catch (retryError) {
+      const recoveredRetry = await recoverPnpmMinimumReleaseAgeInstallFailure(
+        retryError,
+        step,
+      );
+
+      if (recoveredRetry) {
+        return recoveredRetry;
+      }
+
+      throw retryError;
     }
   };
 
@@ -179,12 +321,13 @@ export async function runAuditFix(
     const postRemediation = adapter.buildPostRemediationProcess(context);
 
     if (postRemediation) {
-      await runStep(
-        withLabel(
-          "Reinstall dependencies",
-          postRemediation.command,
-          postRemediation.args,
-        ),
+      const postRemediationStep = withLabel(
+        "Reinstall dependencies",
+        postRemediation.command,
+        postRemediation.args,
+      );
+      await runStep(postRemediationStep, (error) =>
+        recoverPnpmMinimumReleaseAgeInstallFailure(error, postRemediationStep),
       );
     }
   }

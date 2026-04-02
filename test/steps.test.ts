@@ -27,6 +27,7 @@ describe("createStepLifecycleReporter", () => {
       start: vi.fn(),
       succeed: vi.fn(),
       fail: vi.fn(),
+      stop: vi.fn(),
     };
     const reporter = createStepLifecycleReporter({
       enabled: true,
@@ -43,6 +44,86 @@ describe("createStepLifecycleReporter", () => {
 
     expect(spinner.start).toHaveBeenCalledOnce();
     expect(spinner.succeed).toHaveBeenCalledWith("Final audit complete");
+  });
+
+  it("stops the active spinner when paused for an interactive prompt", () => {
+    const spinner = {
+      start: vi.fn(),
+      succeed: vi.fn(),
+      fail: vi.fn(),
+      stop: vi.fn(),
+    };
+    const reporter = createStepLifecycleReporter({
+      enabled: true,
+      color: false,
+      verbose: false,
+      showCommands: false,
+      isInteractive: true,
+      write: vi.fn(),
+      createSpinner: vi.fn(() => spinner),
+    });
+
+    reporter.start({
+      label: "Reinstall dependencies",
+      command: ["pnpm", "install"],
+    });
+    reporter.pause();
+
+    expect(spinner.stop).toHaveBeenCalledOnce();
+  });
+
+  it("writes a completion line for a paused step after the prompt flow finishes", () => {
+    const writes: string[] = [];
+    const reinstallSpinner = {
+      start: vi.fn(),
+      succeed: vi.fn(),
+      fail: vi.fn(),
+      stop: vi.fn(),
+    };
+    const updateSpinner = {
+      start: vi.fn(),
+      succeed: vi.fn(),
+      fail: vi.fn(),
+      stop: vi.fn(),
+    };
+    const reporter = createStepLifecycleReporter({
+      enabled: true,
+      color: false,
+      verbose: false,
+      showCommands: false,
+      isInteractive: true,
+      write: (text) => {
+        writes.push(text);
+      },
+      createSpinner: vi
+        .fn()
+        .mockReturnValueOnce(reinstallSpinner)
+        .mockReturnValueOnce(updateSpinner),
+    });
+
+    reporter.start({
+      label: "Reinstall dependencies",
+      command: ["pnpm", "install"],
+    });
+    reporter.pause();
+    reporter.start({
+      label: "Update pnpm minimumReleaseAgeExclude",
+      command: ["pnpm", "config", "set"],
+    });
+    reporter.complete({
+      label: "Update pnpm minimumReleaseAgeExclude",
+      command: ["pnpm", "config", "set"],
+    });
+    reporter.complete({
+      label: "Reinstall dependencies",
+      command: ["pnpm", "install"],
+    });
+
+    expect(reinstallSpinner.stop).toHaveBeenCalledOnce();
+    expect(updateSpinner.succeed).toHaveBeenCalledWith(
+      "Update pnpm minimumReleaseAgeExclude complete",
+    );
+    expect(writes).toEqual(["✔ Reinstall dependencies complete\n"]);
   });
 
   it("does not use a spinner in verbose mode", () => {

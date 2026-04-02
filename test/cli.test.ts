@@ -9,6 +9,23 @@ vi.mock("../src/core/run.js", () => ({
   runAuditFix,
 }));
 
+function setIsTTY(
+  stream: NodeJS.ReadStream | NodeJS.WriteStream,
+  value: boolean | undefined,
+): void {
+  if (value === undefined) {
+    delete (stream as { isTTY?: boolean }).isTTY;
+    return;
+  }
+
+  Object.defineProperty(stream, "isTTY", {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
 describe("cli defaults", () => {
   beforeEach(() => {
     runAuditFix.mockReset();
@@ -253,6 +270,44 @@ describe("cli defaults", () => {
         )}\n`,
       );
     } finally {
+      stdoutWrite.mockRestore();
+      stderrWrite.mockRestore();
+    }
+  });
+
+  it("does not install the pnpm confirmation prompt on stdout in json mode", async () => {
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const stderrWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const originalStdinIsTTY = process.stdin.isTTY;
+    const originalStdoutIsTTY = process.stdout.isTTY;
+    const originalStderrIsTTY = process.stderr.isTTY;
+    const cli = await import("../src/cli.js");
+
+    setIsTTY(process.stdin, true);
+    setIsTTY(process.stdout, true);
+    setIsTTY(process.stderr, false);
+
+    try {
+      const exitCode = await cli.main(["--json"]);
+      const [, dependencies] = runAuditFix.mock.calls[0] as [
+        unknown,
+        {
+          confirmPnpmMinimumReleaseAgeExclusions?: unknown;
+        },
+      ];
+
+      expect(exitCode).toBe(0);
+      expect(
+        dependencies.confirmPnpmMinimumReleaseAgeExclusions,
+      ).toBeUndefined();
+    } finally {
+      setIsTTY(process.stdin, originalStdinIsTTY);
+      setIsTTY(process.stdout, originalStdoutIsTTY);
+      setIsTTY(process.stderr, originalStderrIsTTY);
       stdoutWrite.mockRestore();
       stderrWrite.mockRestore();
     }
