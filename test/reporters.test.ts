@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { CommandExecutionError } from "../src/core/types.js";
+import {
+  CommandExecutionError,
+  MinimumReleaseAgeDeclinedError,
+} from "../src/core/types.js";
 import { formatFailure, formatTextSummary } from "../src/reporters/text.js";
 
 describe("formatTextSummary", () => {
@@ -127,5 +130,24 @@ describe("formatFailure", () => {
     expect(output).toContain("stdout:\nstdout line");
     expect(output).toContain("stderr:\nstderr line");
     expect(output).toContain("Reason: Process exited with code 1");
+  });
+
+  it("prints a concise message when the minimumReleaseAge prompt is declined", () => {
+    const output = formatFailure(
+      new MinimumReleaseAgeDeclinedError({
+        step: {
+          label: "Reinstall dependencies",
+          command: "pnpm",
+          args: ["install", "--no-frozen-lockfile"],
+        },
+        manager: "pnpm",
+        configSetting: "minimumReleaseAgeExclude",
+        packages: ["lodash@4.18.1", "chalk@5.4.0"],
+      }),
+    );
+
+    expect(output).toBe(
+      "Reason: minimumReleaseAge blocked pnpm install for lodash@4.18.1, chalk@5.4.0. Rerun and answer Y to add them to minimumReleaseAgeExclude automatically.",
+    );
   });
 });

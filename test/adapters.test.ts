@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { bunAdapter } from "../src/adapters/bun.js";
+import {
+  bunAdapter,
+  extractBunMinimumReleaseAgeExclusions,
+  parseBunMinimumReleaseAgeExcludesConfig,
+  updateBunMinimumReleaseAgeExcludesConfig,
+} from "../src/adapters/bun.js";
 import { npmAdapter } from "../src/adapters/npm.js";
-import { pnpmAdapter } from "../src/adapters/pnpm.js";
-import { yarnBerryAdapter } from "../src/adapters/yarn-berry.js";
+import {
+  extractPnpmMinimumReleaseAgeExclusions,
+  parsePnpmMinimumReleaseAgeExcludeConfig,
+  pnpmAdapter,
+} from "../src/adapters/pnpm.js";
+import {
+  extractYarnMinimumReleaseAgeExclusions,
+  parseYarnNpmPreapprovedPackagesConfig,
+  updateYarnNpmPreapprovedPackagesConfig,
+  yarnBerryAdapter,
+} from "../src/adapters/yarn-berry.js";
 import { yarnClassicAdapter } from "../src/adapters/yarn-classic.js";
 import { readFixture } from "./helpers.js";
 
@@ -40,7 +54,7 @@ describe("adapter commands", () => {
       }),
     ).toEqual({
       command: "pnpm",
-      args: ["install", "--no-frozen-lockfile"],
+      args: ["install", "--no-frozen-lockfile", "--reporter", "ndjson"],
     });
   });
 
@@ -194,6 +208,234 @@ describe("adapter fixtures", () => {
     expect(before.entries).toHaveLength(3);
     expect(before.entries[0]?.advisoryIds).toContain("CVE-2026-33750");
     expect(after.total).toBe(0);
+  });
+
+  it("extracts too-new pnpm install packages from ndjson reporter output", () => {
+    const exclusions = extractPnpmMinimumReleaseAgeExclusions({
+      stdout: [
+        JSON.stringify({
+          name: "pnpm",
+          code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+          immatureVersion: "4.18.1",
+          package: {
+            name: "lodash",
+            version: ">=4.18.0",
+          },
+        }),
+      ].join("\n"),
+      stderr: [
+        JSON.stringify({
+          name: "pnpm",
+          err: {
+            code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+          },
+          immatureVersion: "5.4.0",
+          package: {
+            name: "chalk",
+            version: "^5.4.0",
+          },
+        }),
+        JSON.stringify({
+          name: "pnpm",
+          code: "ERR_PNPM_NO_MATURE_MATCHING_VERSION",
+          immatureVersion: "4.18.1",
+          packageMeta: {
+            name: "lodash",
+          },
+        }),
+      ].join("\n"),
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "lodash",
+        version: "4.18.1",
+        specifier: "lodash@4.18.1",
+      },
+      {
+        packageName: "chalk",
+        version: "5.4.0",
+        specifier: "chalk@5.4.0",
+      },
+    ]);
+  });
+
+  it("extracts too-new pnpm install packages from plain error text", () => {
+    const exclusions = extractPnpmMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr:
+        "ERR_PNPM_NO_MATURE_MATCHING_VERSION\nVersion 4.18.1 (released 10 hours ago) of lodash does not meet the minimumReleaseAge constraint\nVersion 5.4.0 (released 2 hours ago) of chalk does not meet the minimumReleaseAge constraint\n",
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "lodash",
+        version: "4.18.1",
+        specifier: "lodash@4.18.1",
+      },
+      {
+        packageName: "chalk",
+        version: "5.4.0",
+        specifier: "chalk@5.4.0",
+      },
+    ]);
+  });
+
+  it("parses pnpm minimumReleaseAgeExclude config output", () => {
+    expect(parsePnpmMinimumReleaseAgeExcludeConfig("null")).toEqual([]);
+    expect(
+      parsePnpmMinimumReleaseAgeExcludeConfig(
+        '["lodash@4.18.1","chalk@5.4.0"]',
+      ),
+    ).toEqual(["lodash@4.18.1", "chalk@5.4.0"]);
+  });
+
+  it("ignores bun non-age resolution failures that only say package exists", () => {
+    const exclusions = extractBunMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr:
+        'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)',
+    });
+
+    expect(exclusions).toEqual([]);
+  });
+
+  it("extracts too-new bun update packages from minimum-age error text", () => {
+    const exclusions = extractBunMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr: [
+        "error: minimum-release-age prevented resolving fresh releases",
+        'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)',
+        'error: No version matching "^4.18.0" found for specifier "lodash" (but package exists)',
+        'error: No version matching "brace-expansion" found for specifier "^1.1.11" (blocked by minimum-release-age: 2592000 seconds)',
+      ].join("\n"),
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "brace-expansion",
+        version: "^1.1.11",
+        specifier: "brace-expansion",
+      },
+      {
+        packageName: "chalk",
+        version: "5.4.0",
+        specifier: "chalk",
+      },
+      {
+        packageName: "lodash",
+        version: "^4.18.0",
+        specifier: "lodash",
+      },
+    ]);
+  });
+
+  it("extracts bun minimum-age exclusions from all-versions-blocked lines", () => {
+    const exclusions = extractBunMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr:
+        'error: No version matching "brace-expansion" found for specifier "^1.1.13" (all versions blocked by minimum-release-age)',
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "brace-expansion",
+        version: "^1.1.13",
+        specifier: "brace-expansion",
+      },
+    ]);
+  });
+
+  it("extracts bun minimum-age exclusions from failed-to-resolve lines", () => {
+    const exclusions = extractBunMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr: [
+        'error: No version matching "brace-expansion" found for specifier "^1.1.13" (blocked by minimum-release-age: 2592000 seconds)',
+        'error: No version matching "typescript" found for specifier "6.0.2" (blocked by minimum-release-age: 2592000 seconds)',
+        "error: brace-expansion@^1.1.13 failed to resolve",
+        "error: typescript@6.0.2 failed to resolve",
+      ].join("\n"),
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "brace-expansion",
+        version: "^1.1.13",
+        specifier: "brace-expansion",
+      },
+      {
+        packageName: "typescript",
+        version: "6.0.2",
+        specifier: "typescript",
+      },
+    ]);
+  });
+
+  it("parses and updates bun minimumReleaseAgeExcludes config output", () => {
+    const source = [
+      "[install]",
+      "minimumReleaseAge = 259200",
+      'minimumReleaseAgeExcludes = ["left-pad"]',
+      "",
+      "[test]",
+      'root = "./test"',
+      "",
+    ].join("\n");
+
+    expect(parseBunMinimumReleaseAgeExcludesConfig(source)).toEqual([
+      "left-pad",
+    ]);
+    expect(
+      updateBunMinimumReleaseAgeExcludesConfig(source, ["left-pad", "chalk"]),
+    ).toContain('minimumReleaseAgeExcludes = ["left-pad", "chalk"]');
+    expect(updateBunMinimumReleaseAgeExcludesConfig("", ["chalk"])).toBe(
+      '[install]\nminimumReleaseAgeExcludes = ["chalk"]\n',
+    );
+  });
+
+  it("extracts too-new yarn berry packages from quarantined resolution errors", () => {
+    const exclusions = extractYarnMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr:
+        '➤ YN0016: │ lodash@npm:4.17.21: All versions satisfying "4.17.21" are quarantined\n➤ YN0016: │ @types/lodash@npm:^4.17.20: All versions satisfying "^4.17.20" are quarantined\n',
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "lodash",
+        version: "4.17.21",
+        specifier: "lodash@4.17.21",
+      },
+      {
+        packageName: "@types/lodash",
+        version: "^4.17.20",
+        specifier: "@types/lodash@^4.17.20",
+      },
+    ]);
+  });
+
+  it("parses and updates yarn npmPreapprovedPackages config output", () => {
+    const source = [
+      'npmMinimalAgeGate: "3d"',
+      "npmPreapprovedPackages:",
+      '  - "left-pad@1.0.0"',
+      "",
+      "nodeLinker: node-modules",
+      "",
+    ].join("\n");
+
+    expect(parseYarnNpmPreapprovedPackagesConfig(source)).toEqual([
+      "left-pad@1.0.0",
+    ]);
+    expect(
+      updateYarnNpmPreapprovedPackagesConfig(source, [
+        "left-pad@1.0.0",
+        "lodash@4.17.21",
+      ]),
+    ).toContain('  - "lodash@4.17.21"');
+    expect(updateYarnNpmPreapprovedPackagesConfig("", ["lodash@4.17.21"])).toBe(
+      'npmPreapprovedPackages:\n  - "lodash@4.17.21"\n',
+    );
   });
 
   it("parses npm fixture snapshots", () => {

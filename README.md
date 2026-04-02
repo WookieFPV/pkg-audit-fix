@@ -33,7 +33,7 @@ pkg-audit-fix --json
 
 ## Manager Notes
 
-- `pnpm`: remediation runs `pnpm audit --json --fix` and then `pnpm install --no-frozen-lockfile`.
+- `pnpm`: remediation runs `pnpm audit --json --fix` and then `pnpm install --no-frozen-lockfile --reporter ndjson`. If install is blocked by `minimumReleaseAge`, the CLI can prompt to append the blocked `name@version` entries to `minimumReleaseAgeExclude` and retry.
 - `npm`: remediation runs `npm audit fix --json`. Severity filtering is applied by `pkg-audit-fix` after parsing the audit report, because npm's `--audit-level` only changes npm's failure threshold.
 - `yarn` Classic: audits via `yarn audit --json`. Classic Yarn does not provide an `audit fix` flow, so `pkg-audit-fix` reports findings but does not apply package updates automatically.
 - `yarn` Berry: audits via `yarn npm audit --json --all --recursive` and can optionally run `yarn dedupe` after the audit pass.

@@ -63,6 +63,19 @@ export interface CommandResult {
   signal: NodeJS.Signals | null;
 }
 
+export interface ConfirmMinimumReleaseAgeExclusionsInput {
+  manager: "pnpm" | "bun" | "yarn";
+  configSetting:
+    | "minimumReleaseAgeExclude"
+    | "minimumReleaseAgeExcludes"
+    | "npmPreapprovedPackages";
+  packages: string[];
+}
+
+export type ConfirmMinimumReleaseAgeExclusions = (
+  input: ConfirmMinimumReleaseAgeExclusionsInput,
+) => Promise<boolean>;
+
 export interface RunAuditFixOptions {
   cwd: string;
   manager: PackageManagerOverride;
@@ -82,6 +95,7 @@ export interface StepLifecycleHooks {
   onStepStart?: ((event: StepEvent) => void) | undefined;
   onStepComplete?: ((event: StepEvent) => void) | undefined;
   onStepFail?: ((event: StepEvent) => void) | undefined;
+  onInteractivePrompt?: (() => void) | undefined;
 }
 
 export interface DetectionResult {
@@ -155,5 +169,42 @@ export class CommandExecutionError extends Error {
     this.name = "CommandExecutionError";
     this.step = step;
     this.result = result;
+  }
+}
+
+export class MinimumReleaseAgeDeclinedError extends Error {
+  readonly step: CommandStep;
+  readonly manager: "pnpm" | "bun" | "yarn";
+  readonly configSetting:
+    | "minimumReleaseAgeExclude"
+    | "minimumReleaseAgeExcludes"
+    | "npmPreapprovedPackages";
+  readonly packages: string[];
+
+  constructor(input: {
+    step: CommandStep;
+    manager: "pnpm" | "bun" | "yarn";
+    configSetting:
+      | "minimumReleaseAgeExclude"
+      | "minimumReleaseAgeExcludes"
+      | "npmPreapprovedPackages";
+    packages: string[];
+  }) {
+    const { step, manager, configSetting, packages } = input;
+    const packageList = packages.join(", ");
+    const pronoun = packages.length === 1 ? "it" : "them";
+    const action =
+      step.args[0] && step.args[0].length > 0
+        ? `${step.command} ${step.args[0]}`
+        : step.command;
+
+    super(
+      `minimumReleaseAge blocked ${action} for ${packageList}. Rerun and answer Y to add ${pronoun} to ${configSetting} automatically.`,
+    );
+    this.name = "MinimumReleaseAgeDeclinedError";
+    this.step = step;
+    this.manager = manager;
+    this.configSetting = configSetting;
+    this.packages = packages;
   }
 }

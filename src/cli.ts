@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import * as readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 import { runAuditFix } from "./core/run.js";
@@ -243,6 +244,33 @@ function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
+async function confirmPnpmMinimumReleaseAgeExclusions(input: {
+  manager: "pnpm" | "bun" | "yarn";
+  configSetting:
+    | "minimumReleaseAgeExclude"
+    | "minimumReleaseAgeExcludes"
+    | "npmPreapprovedPackages";
+  packages: string[];
+  output: NodeJS.WriteStream;
+}): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: input.output,
+  });
+  const packageList = input.packages.join(", ");
+  const pronoun = input.packages.length === 1 ? "it" : "them";
+
+  try {
+    const answer = await rl.question(
+      `${input.manager} blocked ${packageList} because of minimumReleaseAge. Add ${pronoun} to ${input.configSetting} and retry? [y/N] `,
+    );
+
+    return /^(y|yes)$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const options = parseArgs(argv);
 
@@ -263,6 +291,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   const showCommands = options.showCommands || options.verbose || options.debug;
   const diagnosticsWrite = (text: string) =>
     options.json ? process.stderr.write(text) : process.stdout.write(text);
+  const promptOutput =
+    options.json || process.stderr.isTTY ? process.stderr : process.stdout;
+  const canConfirmPnpmMinimumReleaseAgeExclusions =
+    process.stdin.isTTY &&
+    (options.json
+      ? process.stderr.isTTY
+      : process.stderr.isTTY || process.stdout.isTTY);
   const stepReporter = createStepLifecycleReporter({
     enabled: !options.json || options.debug || showCommands,
     color: options.color,
@@ -283,6 +318,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       verbose: options.verbose,
     },
     {
+      confirmPnpmMinimumReleaseAgeExclusions:
+        canConfirmPnpmMinimumReleaseAgeExclusions
+          ? (input) =>
+              confirmPnpmMinimumReleaseAgeExclusions({
+                manager: input.manager,
+                configSetting: input.configSetting,
+                packages: input.packages,
+                output: promptOutput,
+              })
+          : undefined,
       hooks: {
         onStepStart: (step) => {
           stepReporter.start(step);
@@ -292,6 +337,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         },
         onStepFail: (step) => {
           stepReporter.fail(step);
+        },
+        onInteractivePrompt: () => {
+          stepReporter.pause();
         },
       },
       onManagerDetected: (detection) => {
