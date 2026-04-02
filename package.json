@@ -1,6 +1,6 @@
 {
   "name": "pkg-audit-fix",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Audit and remediate dependency vulnerabilities across pnpm, npm, yarn, and bun projects.",
   "type": "module",
   "bin": {
