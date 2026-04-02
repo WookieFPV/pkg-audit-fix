@@ -63,12 +63,14 @@ export interface CommandResult {
   signal: NodeJS.Signals | null;
 }
 
-export interface ConfirmPnpmMinimumReleaseAgeExclusionsInput {
+export interface ConfirmMinimumReleaseAgeExclusionsInput {
+  manager: "pnpm" | "bun";
+  configSetting: "minimumReleaseAgeExclude" | "minimumReleaseAgeExcludes";
   packages: string[];
 }
 
-export type ConfirmPnpmMinimumReleaseAgeExclusions = (
-  input: ConfirmPnpmMinimumReleaseAgeExclusionsInput,
+export type ConfirmMinimumReleaseAgeExclusions = (
+  input: ConfirmMinimumReleaseAgeExclusionsInput,
 ) => Promise<boolean>;
 
 export interface RunAuditFixOptions {
@@ -167,18 +169,35 @@ export class CommandExecutionError extends Error {
   }
 }
 
-export class PnpmMinimumReleaseAgeDeclinedError extends Error {
+export class MinimumReleaseAgeDeclinedError extends Error {
   readonly step: CommandStep;
+  readonly manager: "pnpm" | "bun";
+  readonly configSetting:
+    | "minimumReleaseAgeExclude"
+    | "minimumReleaseAgeExcludes";
   readonly packages: string[];
 
-  constructor(step: CommandStep, packages: string[]) {
+  constructor(input: {
+    step: CommandStep;
+    manager: "pnpm" | "bun";
+    configSetting: "minimumReleaseAgeExclude" | "minimumReleaseAgeExcludes";
+    packages: string[];
+  }) {
+    const { step, manager, configSetting, packages } = input;
     const packageList = packages.join(", ");
     const pronoun = packages.length === 1 ? "it" : "them";
+    const action =
+      step.args[0] && step.args[0].length > 0
+        ? `${step.command} ${step.args[0]}`
+        : step.command;
+
     super(
-      `minimumReleaseAge blocked pnpm install for ${packageList}. Rerun and answer Y to add ${pronoun} to minimumReleaseAgeExclude automatically.`,
+      `minimumReleaseAge blocked ${action} for ${packageList}. Rerun and answer Y to add ${pronoun} to ${configSetting} automatically.`,
     );
-    this.name = "PnpmMinimumReleaseAgeDeclinedError";
+    this.name = "MinimumReleaseAgeDeclinedError";
     this.step = step;
+    this.manager = manager;
+    this.configSetting = configSetting;
     this.packages = packages;
   }
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CommandExecutionError,
-  PnpmMinimumReleaseAgeDeclinedError,
+  MinimumReleaseAgeDeclinedError,
 } from "../src/core/types.js";
 import { formatFailure, formatTextSummary } from "../src/reporters/text.js";
 
@@ -134,14 +134,16 @@ describe("formatFailure", () => {
 
   it("prints a concise message when the minimumReleaseAge prompt is declined", () => {
     const output = formatFailure(
-      new PnpmMinimumReleaseAgeDeclinedError(
-        {
+      new MinimumReleaseAgeDeclinedError({
+        step: {
           label: "Reinstall dependencies",
           command: "pnpm",
           args: ["install", "--no-frozen-lockfile"],
         },
-        ["lodash@4.18.1", "chalk@5.4.0"],
-      ),
+        manager: "pnpm",
+        configSetting: "minimumReleaseAgeExclude",
+        packages: ["lodash@4.18.1", "chalk@5.4.0"],
+      }),
     );
 
     expect(output).toBe(

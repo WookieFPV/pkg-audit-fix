@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { bunAdapter } from "../src/adapters/bun.js";
+import {
+  bunAdapter,
+  extractBunMinimumReleaseAgeExclusions,
+  parseBunMinimumReleaseAgeExcludesConfig,
+  updateBunMinimumReleaseAgeExcludesConfig,
+} from "../src/adapters/bun.js";
 import { npmAdapter } from "../src/adapters/npm.js";
 import {
   extractPnpmMinimumReleaseAgeExclusions,
@@ -278,6 +283,56 @@ describe("adapter fixtures", () => {
         '["lodash@4.18.1","chalk@5.4.0"]',
       ),
     ).toEqual(["lodash@4.18.1", "chalk@5.4.0"]);
+  });
+
+  it("extracts too-new bun update packages from error text", () => {
+    const exclusions = extractBunMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr: [
+        'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)',
+        'error: No version matching "^4.18.0" found for specifier "lodash" (but package exists)',
+      ].join("\n"),
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "chalk",
+        version: "5.4.0",
+        specifier: "chalk@5.4.0",
+      },
+      {
+        packageName: "lodash",
+        version: "^4.18.0",
+        specifier: "lodash@^4.18.0",
+      },
+    ]);
+  });
+
+  it("parses and updates bun minimumReleaseAgeExcludes config output", () => {
+    const source = [
+      "[install]",
+      "minimumReleaseAge = 259200",
+      'minimumReleaseAgeExcludes = ["left-pad@1.0.0"]',
+      "",
+      "[test]",
+      'root = "./test"',
+      "",
+    ].join("\n");
+
+    expect(parseBunMinimumReleaseAgeExcludesConfig(source)).toEqual([
+      "left-pad@1.0.0",
+    ]);
+    expect(
+      updateBunMinimumReleaseAgeExcludesConfig(source, [
+        "left-pad@1.0.0",
+        "chalk@5.4.0",
+      ]),
+    ).toContain(
+      'minimumReleaseAgeExcludes = ["left-pad@1.0.0", "chalk@5.4.0"]',
+    );
+    expect(updateBunMinimumReleaseAgeExcludesConfig("", ["chalk@5.4.0"])).toBe(
+      '[install]\nminimumReleaseAgeExcludes = ["chalk@5.4.0"]\n',
+    );
   });
 
   it("parses npm fixture snapshots", () => {

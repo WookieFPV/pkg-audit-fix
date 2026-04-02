@@ -1,9 +1,13 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { runAuditFix } from "../src/core/run.js";
 import {
   CommandExecutionError,
-  type PnpmMinimumReleaseAgeDeclinedError,
+  type MinimumReleaseAgeDeclinedError,
 } from "../src/core/types.js";
 import { readFixture } from "./helpers.js";
 
@@ -273,6 +277,8 @@ describe("runAuditFix", () => {
     );
 
     expect(confirmPnpmMinimumReleaseAgeExclusions).toHaveBeenCalledWith({
+      manager: "pnpm",
+      configSetting: "minimumReleaseAgeExclude",
       packages: ["lodash@4.18.1", "chalk@5.4.0"],
     });
     expect(steps).toEqual([
@@ -388,11 +394,123 @@ describe("runAuditFix", () => {
       );
       throw new Error("Expected runAuditFix to reject");
     } catch (error) {
-      const declinedError = error as PnpmMinimumReleaseAgeDeclinedError;
+      const declinedError = error as MinimumReleaseAgeDeclinedError;
 
-      expect(declinedError.name).toBe("PnpmMinimumReleaseAgeDeclinedError");
+      expect(declinedError.name).toBe("MinimumReleaseAgeDeclinedError");
       expect(declinedError.packages).toEqual(["lodash@4.18.1"]);
       expect(declinedError.step.label).toBe("Reinstall dependencies");
+    }
+  });
+
+  it("retries bun update after adding too-new packages to minimumReleaseAgeExcludes", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pkg-audit-fix-bun-"));
+    const steps: string[] = [];
+    let remediationAttempts = 0;
+    const confirmPnpmMinimumReleaseAgeExclusions = vi.fn(async () => true);
+    const exec = vi.fn(async (step) => {
+      steps.push(step.label);
+
+      if (step.label === "Initial audit") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("bun", "before.json"),
+          stderr: "",
+          exitCode: 1,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Apply fixes") {
+        if (remediationAttempts === 0) {
+          remediationAttempts += 1;
+          throw new CommandExecutionError(
+            step,
+            {
+              command: step.command,
+              args: step.args,
+              stdout: "",
+              stderr:
+                'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)\n',
+              exitCode: 1,
+              signal: null,
+            },
+            "Process exited with code 1",
+          );
+        }
+
+        remediationAttempts += 1;
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Final audit") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("bun", "after.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      throw new Error(`Unexpected step: ${step.label}`);
+    });
+
+    fs.writeFileSync(
+      path.join(cwd, "bunfig.toml"),
+      '[install]\nminimumReleaseAgeExcludes = ["left-pad@1.0.0"]\n',
+      "utf8",
+    );
+
+    try {
+      const result = await runAuditFix(
+        {
+          cwd,
+          manager: "bun",
+          scope: "all",
+          threshold: "moderate",
+          dedupe: "never",
+          dryRun: false,
+          verbose: false,
+        },
+        {
+          confirmPnpmMinimumReleaseAgeExclusions,
+          detectManager: async () => ({
+            manager: "bun",
+            agent: "bun",
+            source: "override",
+          }),
+          exec,
+        },
+      );
+
+      expect(confirmPnpmMinimumReleaseAgeExclusions).toHaveBeenCalledWith({
+        manager: "bun",
+        configSetting: "minimumReleaseAgeExcludes",
+        packages: ["chalk@5.4.0"],
+      });
+      expect(steps).toEqual([
+        "Initial audit",
+        "Apply fixes",
+        "Apply fixes",
+        "Final audit",
+      ]);
+      expect(remediationAttempts).toBe(2);
+      expect(fs.readFileSync(path.join(cwd, "bunfig.toml"), "utf8")).toContain(
+        'minimumReleaseAgeExcludes = ["left-pad@1.0.0", "chalk@5.4.0"]',
+      );
+      expect(result.fixedCount).toBe(2);
+      expect(result.remainingCount).toBe(0);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
     }
   });
 

@@ -245,6 +245,8 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 async function confirmPnpmMinimumReleaseAgeExclusions(input: {
+  manager: "pnpm" | "bun";
+  configSetting: "minimumReleaseAgeExclude" | "minimumReleaseAgeExcludes";
   packages: string[];
   output: NodeJS.WriteStream;
 }): Promise<boolean> {
@@ -257,7 +259,7 @@ async function confirmPnpmMinimumReleaseAgeExclusions(input: {
 
   try {
     const answer = await rl.question(
-      `pnpm blocked ${packageList} because of minimumReleaseAge. Add ${pronoun} to minimumReleaseAgeExclude and retry? [y/N] `,
+      `${input.manager} blocked ${packageList} because of minimumReleaseAge. Add ${pronoun} to ${input.configSetting} and retry? [y/N] `,
     );
 
     return /^(y|yes)$/i.test(answer.trim());
@@ -317,6 +319,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         canConfirmPnpmMinimumReleaseAgeExclusions
           ? (input) =>
               confirmPnpmMinimumReleaseAgeExclusions({
+                manager: input.manager,
+                configSetting: input.configSetting,
                 packages: input.packages,
                 output: promptOutput,
               })
