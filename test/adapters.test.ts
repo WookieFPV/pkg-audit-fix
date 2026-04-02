@@ -319,6 +319,31 @@ describe("adapter fixtures", () => {
     ]);
   });
 
+  it("extracts bun minimum-age exclusions from failed-to-resolve lines", () => {
+    const exclusions = extractBunMinimumReleaseAgeExclusions({
+      stdout: "",
+      stderr: [
+        'error: No version matching "brace-expansion" found for specifier "^1.1.13" (blocked by minimum-release-age: 2592000 seconds)',
+        'error: No version matching "typescript" found for specifier "6.0.2" (blocked by minimum-release-age: 2592000 seconds)',
+        "error: brace-expansion@^1.1.13 failed to resolve",
+        "error: typescript@6.0.2 failed to resolve",
+      ].join("\n"),
+    });
+
+    expect(exclusions).toEqual([
+      {
+        packageName: "brace-expansion",
+        version: "^1.1.13",
+        specifier: "brace-expansion",
+      },
+      {
+        packageName: "typescript",
+        version: "6.0.2",
+        specifier: "typescript",
+      },
+    ]);
+  });
+
   it("parses and updates bun minimumReleaseAgeExcludes config output", () => {
     const source = [
       "[install]",

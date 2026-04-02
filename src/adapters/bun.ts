@@ -159,6 +159,21 @@ function findTomlArrayAssignment(
   return null;
 }
 
+function parseBunFailedResolutionSpecifier(
+  value: string,
+): { packageName: string; version: string } | null {
+  const separatorIndex = value.lastIndexOf("@");
+
+  if (separatorIndex <= 0 || separatorIndex === value.length - 1) {
+    return null;
+  }
+
+  return {
+    packageName: value.slice(0, separatorIndex),
+    version: value.slice(separatorIndex + 1),
+  };
+}
+
 export function extractBunMinimumReleaseAgeExclusions(result: {
   stdout: string;
   stderr: string;
@@ -209,6 +224,24 @@ export function extractBunMinimumReleaseAgeExclusions(result: {
       }
 
       pushExclusion(packageName, version);
+    }
+
+    if (!source.includes("minimum-release-age")) {
+      continue;
+    }
+
+    const failedResolutionMatches = source.matchAll(
+      /error:\s+(\S+)\s+failed to resolve/g,
+    );
+
+    for (const match of failedResolutionMatches) {
+      const parsedSpecifier = parseBunFailedResolutionSpecifier(match[1] ?? "");
+
+      if (!parsedSpecifier) {
+        continue;
+      }
+
+      pushExclusion(parsedSpecifier.packageName, parsedSpecifier.version);
     }
   }
 

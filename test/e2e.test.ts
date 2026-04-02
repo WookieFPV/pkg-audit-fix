@@ -716,6 +716,125 @@ async function resolveRecentPackage(
   );
 }
 
+function getManagerCase(id: ManagerCase["id"]): ManagerCase {
+  const managerCase = managerCases.find((entry) => entry.id === id);
+
+  if (!managerCase) {
+    throw new Error(`Missing manager case for ${id}`);
+  }
+
+  return managerCase;
+}
+
+async function expectRealVulnerabilityRemediation(
+  managerCase: ManagerCase,
+): Promise<void> {
+  expect(
+    isManagerAvailable(managerCase.manager),
+    `${managerCase.manager} must be installed to run the E2E suite`,
+  ).toBe(true);
+
+  const { projectDir, envOverrides } = await createProject(managerCase.manager);
+  await managerCase.setupProject?.(projectDir);
+
+  await runCommand({
+    command: managerCase.command,
+    args: managerCase.installArgs,
+    cwd: projectDir,
+    envOverrides,
+  });
+  await relaxDependencyRange(projectDir);
+
+  const initialAudit = await runAudit(managerCase, projectDir, envOverrides);
+  expect(initialAudit.exitCode).toBe(1);
+  expect(initialAudit.total).toBeGreaterThan(0);
+
+  const initialInstalledVersion = await readInstalledVersion(projectDir);
+  expect(initialInstalledVersion).toBe(FIXTURE_PACKAGE.vulnerableVersion);
+
+  const cliRun = await invokeCli(managerCase, projectDir, envOverrides);
+
+  expect(cliRun.exitCode).toBe(0);
+  expect(cliRun.summary.status).toBe("resolved-some");
+  expect(cliRun.summary.initial.total).toBeGreaterThan(0);
+  expect(cliRun.summary.final.total).toBe(0);
+  expect(
+    cliRun.summary.fixed.some(
+      (entry) => entry.packageName === FIXTURE_PACKAGE.name,
+    ),
+  ).toBe(true);
+
+  const finalAudit = await runAudit(managerCase, projectDir, envOverrides);
+  expect(finalAudit.exitCode).toBe(0);
+  expect(finalAudit.total).toBe(0);
+
+  const finalInstalledVersion = await readInstalledVersion(projectDir);
+  expect(finalInstalledVersion).not.toBe(FIXTURE_PACKAGE.vulnerableVersion);
+}
+
+async function expectMinimumAgeRecovery(
+  managerCase: ManagerCase,
+): Promise<void> {
+  expect(
+    isCommandAvailable(managerCase.command),
+    `${managerCase.command} must be installed to run the E2E suite`,
+  ).toBe(true);
+  expect(
+    ptyCommand && isCommandAvailable(ptyCommand),
+    `${ptyCommand ?? "script"} must be installed to run interactive minimum-age E2E tests`,
+  ).toBe(true);
+
+  const recentPackage = await resolveRecentPackage(
+    MINIMUM_AGE_RECENT_PACKAGE_CANDIDATES[managerCase.id],
+  );
+  const { projectDir, envOverrides } = await createProject(managerCase.manager);
+  await managerCase.setupProject?.(projectDir);
+
+  await runCommand({
+    command: managerCase.command,
+    args: managerCase.installArgs,
+    cwd: projectDir,
+    envOverrides,
+  });
+  await installDependency(
+    managerCase,
+    projectDir,
+    envOverrides,
+    recentPackage.matureSpecifier,
+  );
+  await relaxDependencyRange(projectDir);
+  await addDependencyToManifest(
+    projectDir,
+    recentPackage.packageName,
+    recentPackage.version,
+  );
+
+  const initialAudit = await runAudit(managerCase, projectDir, envOverrides);
+  expect(initialAudit.exitCode).toBe(1);
+  expect(initialAudit.total).toBeGreaterThan(0);
+  expect(await readInstalledVersion(projectDir)).toBe(
+    FIXTURE_PACKAGE.vulnerableVersion,
+  );
+
+  await configureMinimumAge(managerCase, projectDir);
+
+  const cliRun = await invokeCliWithPrompt(
+    managerCase,
+    projectDir,
+    envOverrides,
+  );
+
+  expect(cliRun.exitCode).toBe(0);
+  await assertMinimumAgeConfigUpdated(managerCase, projectDir);
+
+  const finalAudit = await runAudit(managerCase, projectDir, envOverrides);
+  expect(finalAudit.exitCode).toBe(0);
+  expect(finalAudit.total).toBe(0);
+  expect(await readInstalledVersion(projectDir)).not.toBe(
+    FIXTURE_PACKAGE.vulnerableVersion,
+  );
+}
+
 describe.sequential("CLI vulnerability remediation", () => {
   beforeAll(async () => {
     expect(
@@ -739,130 +858,47 @@ describe.sequential("CLI vulnerability remediation", () => {
     });
   }, E2E_TIMEOUT_MS);
 
-  for (const managerCase of managerCases) {
-    it(`fixes a real ${managerCase.manager} vulnerability in a temp project`, {
+  it("fixes a real npm vulnerability in a temp project", {
+    timeout: E2E_TIMEOUT_MS,
+  }, async () => {
+    await expectRealVulnerabilityRemediation(getManagerCase("npm"));
+  });
+
+  it("fixes a real pnpm vulnerability in a temp project", {
+    timeout: E2E_TIMEOUT_MS,
+  }, async () => {
+    await expectRealVulnerabilityRemediation(getManagerCase("pnpm"));
+  });
+
+  it("fixes a real bun vulnerability in a temp project", {
+    timeout: E2E_TIMEOUT_MS,
+  }, async () => {
+    await expectRealVulnerabilityRemediation(getManagerCase("bun"));
+  });
+
+  it("fixes a real yarn vulnerability in a temp project", {
+    timeout: E2E_TIMEOUT_MS,
+  }, async () => {
+    await expectRealVulnerabilityRemediation(getManagerCase("yarn-berry"));
+  });
+
+  if (ptyCommand) {
+    it("recovers pnpm minimum age gating during remediation", {
       timeout: E2E_TIMEOUT_MS,
     }, async () => {
-      expect(
-        isManagerAvailable(managerCase.manager),
-        `${managerCase.manager} must be installed to run the E2E suite`,
-      ).toBe(true);
-
-      const { projectDir, envOverrides } = await createProject(
-        managerCase.manager,
-      );
-      await managerCase.setupProject?.(projectDir);
-
-      await runCommand({
-        command: managerCase.command,
-        args: managerCase.installArgs,
-        cwd: projectDir,
-        envOverrides,
-      });
-      await relaxDependencyRange(projectDir);
-
-      const initialAudit = await runAudit(
-        managerCase,
-        projectDir,
-        envOverrides,
-      );
-      expect(initialAudit.exitCode).toBe(1);
-      expect(initialAudit.total).toBeGreaterThan(0);
-
-      const initialInstalledVersion = await readInstalledVersion(projectDir);
-      expect(initialInstalledVersion).toBe(FIXTURE_PACKAGE.vulnerableVersion);
-
-      const cliRun = await invokeCli(managerCase, projectDir, envOverrides);
-
-      expect(cliRun.exitCode).toBe(0);
-      expect(cliRun.summary.status).toBe("resolved-some");
-      expect(cliRun.summary.initial.total).toBeGreaterThan(0);
-      expect(cliRun.summary.final.total).toBe(0);
-      expect(
-        cliRun.summary.fixed.some(
-          (entry) => entry.packageName === FIXTURE_PACKAGE.name,
-        ),
-      ).toBe(true);
-
-      const finalAudit = await runAudit(managerCase, projectDir, envOverrides);
-      expect(finalAudit.exitCode).toBe(0);
-      expect(finalAudit.total).toBe(0);
-
-      const finalInstalledVersion = await readInstalledVersion(projectDir);
-      expect(finalInstalledVersion).not.toBe(FIXTURE_PACKAGE.vulnerableVersion);
+      await expectMinimumAgeRecovery(getManagerCase("pnpm"));
     });
-  }
 
-  for (const managerCase of ptyCommand
-    ? managerCases.filter((entry) => entry.supportsMinimumAgeRecovery)
-    : []) {
-    it(`recovers ${managerCase.id} minimum age gating during remediation`, {
+    it("recovers bun minimum age gating during remediation", {
       timeout: E2E_TIMEOUT_MS,
     }, async () => {
-      expect(
-        isCommandAvailable(managerCase.command),
-        `${managerCase.command} must be installed to run the E2E suite`,
-      ).toBe(true);
-      expect(
-        ptyCommand && isCommandAvailable(ptyCommand),
-        `${ptyCommand ?? "script"} must be installed to run interactive minimum-age E2E tests`,
-      ).toBe(true);
+      await expectMinimumAgeRecovery(getManagerCase("bun"));
+    });
 
-      const recentPackage = await resolveRecentPackage(
-        MINIMUM_AGE_RECENT_PACKAGE_CANDIDATES[managerCase.id],
-      );
-      const { projectDir, envOverrides } = await createProject(
-        managerCase.manager,
-      );
-      await managerCase.setupProject?.(projectDir);
-
-      await runCommand({
-        command: managerCase.command,
-        args: managerCase.installArgs,
-        cwd: projectDir,
-        envOverrides,
-      });
-      await installDependency(
-        managerCase,
-        projectDir,
-        envOverrides,
-        recentPackage.matureSpecifier,
-      );
-      await relaxDependencyRange(projectDir);
-      await addDependencyToManifest(
-        projectDir,
-        recentPackage.packageName,
-        recentPackage.version,
-      );
-
-      const initialAudit = await runAudit(
-        managerCase,
-        projectDir,
-        envOverrides,
-      );
-      expect(initialAudit.exitCode).toBe(1);
-      expect(initialAudit.total).toBeGreaterThan(0);
-      expect(await readInstalledVersion(projectDir)).toBe(
-        FIXTURE_PACKAGE.vulnerableVersion,
-      );
-
-      await configureMinimumAge(managerCase, projectDir);
-
-      const cliRun = await invokeCliWithPrompt(
-        managerCase,
-        projectDir,
-        envOverrides,
-      );
-
-      expect(cliRun.exitCode).toBe(0);
-      await assertMinimumAgeConfigUpdated(managerCase, projectDir);
-
-      const finalAudit = await runAudit(managerCase, projectDir, envOverrides);
-      expect(finalAudit.exitCode).toBe(0);
-      expect(finalAudit.total).toBe(0);
-      expect(await readInstalledVersion(projectDir)).not.toBe(
-        FIXTURE_PACKAGE.vulnerableVersion,
-      );
+    it("recovers yarn-berry minimum age gating during remediation", {
+      timeout: E2E_TIMEOUT_MS,
+    }, async () => {
+      await expectMinimumAgeRecovery(getManagerCase("yarn-berry"));
     });
   }
 });
