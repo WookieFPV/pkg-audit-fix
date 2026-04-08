@@ -17,7 +17,11 @@ import {
 } from "./core/types.js";
 import { toJsonSummary } from "./reporters/json.js";
 import { createStepLifecycleReporter } from "./reporters/steps.js";
-import { formatFailure, formatTextSummary } from "./reporters/text.js";
+import {
+  formatFailure,
+  formatTextSummary,
+  formatVulnerabilityList,
+} from "./reporters/text.js";
 
 const HELP_TEXT = `pkg-audit-fix
 
@@ -271,6 +275,32 @@ async function confirmPnpmMinimumReleaseAgeExclusions(input: {
   }
 }
 
+async function promptBunManualRemediation(input: {
+  initial: { entries: Parameters<typeof formatVulnerabilityList>[0] };
+  output: NodeJS.WriteStream;
+}): Promise<void> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: input.output,
+  });
+  const vulnerabilityList = formatVulnerabilityList(input.initial.entries);
+
+  try {
+    input.output.write(
+      [
+        "bun does not support audit --fix. Fix these vulnerabilities manually, then press Enter to run a final audit.",
+        "",
+        "Current vulnerabilities:",
+        vulnerabilityList,
+        "",
+      ].join("\n"),
+    );
+    await rl.question("Press Enter to continue ");
+  } finally {
+    rl.close();
+  }
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const options = parseArgs(argv);
 
@@ -328,6 +358,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
                 output: promptOutput,
               })
           : undefined,
+      promptBunManualRemediation:
+        !options.json && canConfirmPnpmMinimumReleaseAgeExclusions
+          ? (input) =>
+              promptBunManualRemediation({
+                initial: input.initial,
+                output: promptOutput,
+              })
+          : undefined,
       hooks: {
         onStepStart: (step) => {
           stepReporter.start(step);
@@ -355,6 +393,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (options.json) {
     process.stdout.write(`${JSON.stringify(toJsonSummary(result), null, 2)}\n`);
   } else {
+    if (stepReporter.hasOutput()) {
+      process.stdout.write("\n");
+    }
+
     process.stdout.write(`${formatTextSummary(result)}\n`);
   }
 

@@ -28,6 +28,7 @@ export interface NormalizedVulnerability {
   installedVersion: string;
   severity: Severity;
   advisoryIds: string[];
+  remediation?: string | undefined;
   title?: string | undefined;
   url?: string | undefined;
 }
@@ -152,6 +153,10 @@ export interface JsonSummary {
   fixed: FixedPackageGroup[];
   initial: NormalizedAuditSnapshot;
   final: NormalizedAuditSnapshot;
+}
+
+export interface PromptBunManualRemediationInput {
+  initial: NormalizedAuditSnapshot;
 }
 
 export class CliUsageError extends Error {}

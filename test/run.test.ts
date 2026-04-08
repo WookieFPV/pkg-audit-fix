@@ -402,11 +402,9 @@ describe("runAuditFix", () => {
     }
   });
 
-  it("retries bun update after adding too-new packages to minimumReleaseAgeExcludes", async () => {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pkg-audit-fix-bun-"));
+  it("prompts for manual bun remediation and runs a final audit", async () => {
     const steps: string[] = [];
-    let remediationAttempts = 0;
-    const confirmPnpmMinimumReleaseAgeExclusions = vi.fn(async () => true);
+    const promptBunManualRemediation = vi.fn(async () => {});
     const exec = vi.fn(async (step) => {
       steps.push(step.label);
 
@@ -417,37 +415,6 @@ describe("runAuditFix", () => {
           stdout: readFixture("bun", "before.json"),
           stderr: "",
           exitCode: 1,
-          signal: null,
-        };
-      }
-
-      if (step.label === "Apply fixes") {
-        if (remediationAttempts === 0) {
-          remediationAttempts += 1;
-          throw new CommandExecutionError(
-            step,
-            {
-              command: step.command,
-              args: step.args,
-              stdout: "",
-              stderr: [
-                "error: minimum-release-age prevented resolving fresh releases",
-                'error: No version matching "5.4.0" found for specifier "chalk" (but package exists)',
-              ].join("\n"),
-              exitCode: 1,
-              signal: null,
-            },
-            "Process exited with code 1",
-          );
-        }
-
-        remediationAttempts += 1;
-        return {
-          command: step.command,
-          args: step.args,
-          stdout: "",
-          stderr: "",
-          exitCode: 0,
           signal: null,
         };
       }
@@ -466,172 +433,37 @@ describe("runAuditFix", () => {
       throw new Error(`Unexpected step: ${step.label}`);
     });
 
-    fs.writeFileSync(
-      path.join(cwd, "bunfig.toml"),
-      '[install]\nminimumReleaseAgeExcludes = ["left-pad"]\n',
-      "utf8",
+    const result = await runAuditFix(
+      {
+        cwd: "/tmp/project",
+        manager: "bun",
+        scope: "all",
+        threshold: "moderate",
+        dedupe: "auto",
+        dryRun: false,
+        verbose: false,
+      },
+      {
+        promptBunManualRemediation,
+        detectManager: async () => ({
+          manager: "bun",
+          agent: "bun",
+          source: "override",
+        }),
+        exec,
+      },
     );
 
-    try {
-      const result = await runAuditFix(
-        {
-          cwd,
-          manager: "bun",
-          scope: "all",
-          threshold: "moderate",
-          dedupe: "never",
-          dryRun: false,
-          verbose: false,
-        },
-        {
-          confirmPnpmMinimumReleaseAgeExclusions,
-          detectManager: async () => ({
-            manager: "bun",
-            agent: "bun",
-            source: "override",
-          }),
-          exec,
-        },
-      );
-
-      expect(confirmPnpmMinimumReleaseAgeExclusions).toHaveBeenCalledWith({
+    expect(promptBunManualRemediation).toHaveBeenCalledWith({
+      initial: expect.objectContaining({
         manager: "bun",
-        configSetting: "minimumReleaseAgeExcludes",
-        packages: ["chalk"],
-      });
-      expect(steps).toEqual([
-        "Initial audit",
-        "Apply fixes",
-        "Apply fixes",
-        "Final audit",
-      ]);
-      expect(remediationAttempts).toBe(2);
-      expect(fs.readFileSync(path.join(cwd, "bunfig.toml"), "utf8")).toContain(
-        'minimumReleaseAgeExcludes = ["left-pad", "chalk"]',
-      );
-      expect(result.fixedCount).toBe(2);
-      expect(result.remainingCount).toBe(0);
-    } finally {
-      fs.rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  it("retries bun update after minimum-age blocks direct and transitive packages", async () => {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pkg-audit-fix-bun-"));
-    const steps: string[] = [];
-    let remediationAttempts = 0;
-    const confirmPnpmMinimumReleaseAgeExclusions = vi.fn(async () => true);
-    const exec = vi.fn(async (step) => {
-      steps.push(step.label);
-
-      if (step.label === "Initial audit") {
-        return {
-          command: step.command,
-          args: step.args,
-          stdout: readFixture("bun", "before.json"),
-          stderr: "",
-          exitCode: 1,
-          signal: null,
-        };
-      }
-
-      if (step.label === "Apply fixes") {
-        if (remediationAttempts === 0) {
-          remediationAttempts += 1;
-          throw new CommandExecutionError(
-            step,
-            {
-              command: step.command,
-              args: step.args,
-              stdout: "bun update v1.3.11 (af24e281)\n",
-              stderr: [
-                "Resolving dependencies",
-                "Resolved, downloaded and extracted [4]",
-                'error: No version matching "brace-expansion" found for specifier "^1.1.13" (all versions blocked by minimum-release-age)',
-                "",
-                'error: No version matching "typescript" found for specifier "6.0.2" (blocked by minimum-release-age: 2592000 seconds)',
-                "error: typescript@6.0.2 failed to resolve",
-              ].join("\n"),
-              exitCode: 1,
-              signal: null,
-            },
-            "Process exited with code 1",
-          );
-        }
-
-        remediationAttempts += 1;
-        return {
-          command: step.command,
-          args: step.args,
-          stdout: "",
-          stderr: "",
-          exitCode: 0,
-          signal: null,
-        };
-      }
-
-      if (step.label === "Final audit") {
-        return {
-          command: step.command,
-          args: step.args,
-          stdout: readFixture("bun", "after.json"),
-          stderr: "",
-          exitCode: 0,
-          signal: null,
-        };
-      }
-
-      throw new Error(`Unexpected step: ${step.label}`);
+        total: 2,
+      }),
     });
-
-    fs.writeFileSync(
-      path.join(cwd, "bunfig.toml"),
-      "[install]\nminimumReleaseAge = 2592000\n",
-      "utf8",
-    );
-
-    try {
-      const result = await runAuditFix(
-        {
-          cwd,
-          manager: "bun",
-          scope: "all",
-          threshold: "moderate",
-          dedupe: "never",
-          dryRun: false,
-          verbose: false,
-        },
-        {
-          confirmPnpmMinimumReleaseAgeExclusions,
-          detectManager: async () => ({
-            manager: "bun",
-            agent: "bun",
-            source: "override",
-          }),
-          exec,
-        },
-      );
-
-      expect(confirmPnpmMinimumReleaseAgeExclusions).toHaveBeenCalledWith({
-        manager: "bun",
-        configSetting: "minimumReleaseAgeExcludes",
-        packages: ["brace-expansion", "typescript"],
-      });
-      expect(steps).toEqual([
-        "Initial audit",
-        "Apply fixes",
-        "Apply fixes",
-        "Final audit",
-      ]);
-      expect(remediationAttempts).toBe(2);
-      expect(fs.readFileSync(path.join(cwd, "bunfig.toml"), "utf8")).toContain(
-        'minimumReleaseAgeExcludes = ["brace-expansion", "typescript"]',
-      );
-      expect(result.fixedCount).toBe(2);
-      expect(result.remainingCount).toBe(0);
-    } finally {
-      fs.rmSync(cwd, { recursive: true, force: true });
-    }
+    expect(steps).toEqual(["Initial audit", "Final audit"]);
+    expect(result.fixedCount).toBe(2);
+    expect(result.remainingCount).toBe(0);
+    expect(result.status).toBe("resolved-some");
   });
 
   it("short-circuits when the initial audit is already clean", async () => {
@@ -794,12 +626,11 @@ describe("runAuditFix", () => {
     ]);
   });
 
-  it("does not attempt dedupe for managers without dedupe support", async () => {
+  it("runs a final bun audit even without an interactive prompt", async () => {
     const steps: string[] = [];
     const stdoutByStep: Record<string, string> = {
       "Initial audit": readFixture("bun", "before.json"),
-      "Apply fixes": "",
-      "Recheck after fixes": readFixture("bun", "after.json"),
+      "Final audit": readFixture("bun", "after.json"),
     };
     const exec = vi.fn(async (step) => {
       steps.push(step.label);
@@ -834,19 +665,9 @@ describe("runAuditFix", () => {
       },
     );
 
-    expect(steps).toEqual([
-      "Initial audit",
-      "Apply fixes",
-      "Recheck after fixes",
-    ]);
+    expect(steps).toEqual(["Initial audit", "Final audit"]);
     expect(result.dedupeRan).toBe(false);
-    expect(result.stepFixes).toEqual([
-      {
-        label: "Apply fixes",
-        fixedCount: 2,
-        remainingCount: 0,
-      },
-    ]);
+    expect(result.stepFixes).toEqual([]);
   });
 
   it("does not re-audit when yarn classic has no fix or dedupe step", async () => {

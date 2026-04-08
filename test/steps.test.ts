@@ -19,7 +19,8 @@ describe("createStepLifecycleReporter", () => {
     reporter.start({ label: "Initial audit", command: ["pnpm", "audit"] });
     reporter.complete({ label: "Initial audit", command: ["pnpm", "audit"] });
 
-    expect(writes).toEqual(["Initial audit...\n"]);
+    expect(writes).toEqual(["Auditing dependencies...\n"]);
+    expect(reporter.hasOutput()).toBe(true);
   });
 
   it("uses a spinner for interactive non-verbose runs", () => {
@@ -43,7 +44,10 @@ describe("createStepLifecycleReporter", () => {
     reporter.complete({ label: "Final audit", command: ["npm", "audit"] });
 
     expect(spinner.start).toHaveBeenCalledOnce();
-    expect(spinner.succeed).toHaveBeenCalledWith("Final audit complete");
+    expect(spinner.succeed).toHaveBeenCalledWith(
+      "Checked remaining vulnerabilities",
+    );
+    expect(reporter.hasOutput()).toBe(true);
   });
 
   it("stops the active spinner when paused for an interactive prompt", () => {
@@ -121,9 +125,9 @@ describe("createStepLifecycleReporter", () => {
 
     expect(reinstallSpinner.stop).toHaveBeenCalledOnce();
     expect(updateSpinner.succeed).toHaveBeenCalledWith(
-      "Update pnpm minimumReleaseAgeExclude complete",
+      "Updated pnpm minimumReleaseAge exclusions",
     );
-    expect(writes).toEqual(["✔ Reinstall dependencies complete\n"]);
+    expect(writes).toEqual(["✔ Reinstalled dependencies\n"]);
   });
 
   it("does not use a spinner in verbose mode", () => {
@@ -144,7 +148,7 @@ describe("createStepLifecycleReporter", () => {
     reporter.start({ label: "Apply fixes", command: ["bun", "update"] });
     reporter.fail({ label: "Apply fixes", command: ["bun", "update"] });
 
-    expect(writes).toEqual(["Apply fixes...\n"]);
+    expect(writes).toEqual(["Applying available fixes...\n"]);
     expect(createSpinner).not.toHaveBeenCalled();
   });
 
@@ -168,7 +172,7 @@ describe("createStepLifecycleReporter", () => {
 
     expect(writes).toEqual([
       "$ pnpm audit --filter '@scope/pkg with space'\n",
-      "Initial audit...\n",
+      "Auditing dependencies...\n",
     ]);
   });
 });

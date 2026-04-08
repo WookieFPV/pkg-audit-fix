@@ -27,6 +27,7 @@ import type {
   NormalizedAuditSnapshot,
   PackageManager,
   ProcessSpec,
+  PromptBunManualRemediationInput,
   RunAuditFixOptions,
   RunAuditFixResult,
   StepFixResult,
@@ -91,6 +92,9 @@ export async function runAuditFix(
     exec?: ExecFunction | undefined;
     hooks?: StepLifecycleHooks | undefined;
     onManagerDetected?: ((detection: DetectionResult) => void) | undefined;
+    promptBunManualRemediation?:
+      | ((input: PromptBunManualRemediationInput) => Promise<void>)
+      | undefined;
   } = {},
 ): Promise<RunAuditFixResult> {
   const detectManager = dependencies.detectManager ?? detectPackageManager;
@@ -496,6 +500,13 @@ export async function runAuditFix(
 
   let remediationRan = false;
   const dedupeProcess = adapter.buildDedupeProcess(context);
+  const shouldForceBunFinalAudit =
+    !options.dryRun && detection.manager === "bun" && initial.total > 0;
+
+  if (shouldForceBunFinalAudit && dependencies.promptBunManualRemediation) {
+    dependencies.hooks?.onInteractivePrompt?.();
+    await dependencies.promptBunManualRemediation({ initial });
+  }
 
   if (!options.dryRun) {
     const remediation = adapter.buildRemediationProcess(context);
@@ -546,7 +557,21 @@ export async function runAuditFix(
       recordStepFix("Apply fixes", initial, final);
     }
   } else if (!remediationRan && !dedupeProcess) {
-    final = initial;
+    if (shouldForceBunFinalAudit) {
+      const finalAuditStep = withLabel(
+        "Final audit",
+        auditProcess.command,
+        auditProcess.args,
+        auditExitCodes,
+        (result) => adapter.isAuditResult?.(result.stdout) ?? false,
+      );
+      const finalAuditResult = await runStep(finalAuditStep);
+      final = parseAuditResult(finalAuditStep, finalAuditResult, () =>
+        adapter.parseAudit(finalAuditResult.stdout, context),
+      );
+    } else {
+      final = initial;
+    }
   } else {
     const postFixAuditStep = withLabel(
       "Recheck after fixes",

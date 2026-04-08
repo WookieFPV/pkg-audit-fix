@@ -144,7 +144,7 @@ describe("cli defaults", () => {
 
       expect(exitCode).toBe(0);
       expect(stdoutWrite).toHaveBeenCalledWith("$ pnpm audit --json\n");
-      expect(stdoutWrite).toHaveBeenCalledWith("Initial audit...\n");
+      expect(stdoutWrite).toHaveBeenCalledWith("Auditing dependencies...\n");
     } finally {
       stdoutWrite.mockRestore();
     }
@@ -297,6 +297,7 @@ describe("cli defaults", () => {
         unknown,
         {
           confirmPnpmMinimumReleaseAgeExclusions?: unknown;
+          promptBunManualRemediation?: unknown;
         },
       ];
 
@@ -304,12 +305,45 @@ describe("cli defaults", () => {
       expect(
         dependencies.confirmPnpmMinimumReleaseAgeExclusions,
       ).toBeUndefined();
+      expect(dependencies.promptBunManualRemediation).toBeUndefined();
     } finally {
       setIsTTY(process.stdin, originalStdinIsTTY);
       setIsTTY(process.stdout, originalStdoutIsTTY);
       setIsTTY(process.stderr, originalStderrIsTTY);
       stdoutWrite.mockRestore();
       stderrWrite.mockRestore();
+    }
+  });
+
+  it("installs the bun manual-remediation prompt when interactive", async () => {
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const originalStdinIsTTY = process.stdin.isTTY;
+    const originalStdoutIsTTY = process.stdout.isTTY;
+    const originalStderrIsTTY = process.stderr.isTTY;
+    const cli = await import("../src/cli.js");
+
+    setIsTTY(process.stdin, true);
+    setIsTTY(process.stdout, true);
+    setIsTTY(process.stderr, false);
+
+    try {
+      const exitCode = await cli.main([]);
+      const [, dependencies] = runAuditFix.mock.calls[0] as [
+        unknown,
+        {
+          promptBunManualRemediation?: unknown;
+        },
+      ];
+
+      expect(exitCode).toBe(0);
+      expect(dependencies.promptBunManualRemediation).toBeTypeOf("function");
+    } finally {
+      setIsTTY(process.stdin, originalStdinIsTTY);
+      setIsTTY(process.stdout, originalStdoutIsTTY);
+      setIsTTY(process.stderr, originalStderrIsTTY);
+      stdoutWrite.mockRestore();
     }
   });
 
@@ -340,7 +374,7 @@ describe("cli defaults", () => {
 
       expect(exitCode).toBe(0);
       expect(stderrWrite).toHaveBeenCalledWith("$ pnpm audit --json\n");
-      expect(stderrWrite).toHaveBeenCalledWith("Initial audit...\n");
+      expect(stderrWrite).toHaveBeenCalledWith("Auditing dependencies...\n");
       expect(stdoutWrite).toHaveBeenCalledWith(
         `${JSON.stringify(
           {
@@ -381,6 +415,62 @@ describe("cli defaults", () => {
     } finally {
       stdoutWrite.mockRestore();
       stderrWrite.mockRestore();
+    }
+  });
+
+  it("prints a blank line before the text summary after step output", async () => {
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    runAuditFix.mockImplementationOnce(async (_options, dependencies) => {
+      dependencies.hooks?.onStepStart?.({
+        label: "Initial audit",
+        command: ["pnpm", "audit", "--json"],
+      });
+
+      return {
+        manager: "pnpm",
+        detectionSource: "filesystem",
+        threshold: "low",
+        scope: "all",
+        dedupe: "auto",
+        initial: {
+          manager: "pnpm",
+          threshold: "low",
+          scope: "all",
+          total: 0,
+          counts: { low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+          entries: [],
+        },
+        final: {
+          manager: "pnpm",
+          threshold: "low",
+          scope: "all",
+          total: 0,
+          counts: { low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+          entries: [],
+        },
+        fixedCount: 0,
+        remainingCount: 0,
+        fixed: [],
+        exitCode: 0,
+        status: "clean",
+        dryRun: false,
+        dedupeRan: false,
+        stepFixes: [],
+      };
+    });
+    const cli = await import("../src/cli.js");
+
+    try {
+      const exitCode = await cli.main([]);
+
+      expect(exitCode).toBe(0);
+      expect(stdoutWrite).toHaveBeenCalledWith("Auditing dependencies...\n");
+      expect(stdoutWrite).toHaveBeenCalledWith("\n");
+      expect(stdoutWrite).toHaveBeenCalledWith("No vulnerabilities found.\n");
+    } finally {
+      stdoutWrite.mockRestore();
     }
   });
 });
