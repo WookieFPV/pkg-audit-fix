@@ -32,6 +32,32 @@ function isBunRegistryAdvisory(
   );
 }
 
+function remediationFromVulnerableVersions(
+  vulnerableVersions: unknown,
+): string | undefined {
+  if (typeof vulnerableVersions !== "string") {
+    return undefined;
+  }
+
+  const trimmed = vulnerableVersions.trim();
+  const simpleBoundaryMatch = /^(<=|<)\s*([^\s]+)$/.exec(trimmed);
+
+  if (!simpleBoundaryMatch) {
+    return undefined;
+  }
+
+  const operator = simpleBoundaryMatch[1];
+  const version = simpleBoundaryMatch[2];
+
+  if (!version) {
+    return undefined;
+  }
+
+  return operator === "<"
+    ? `upgrade to >=${version}`
+    : `upgrade to >${version}`;
+}
+
 function extractBunAuditItems(json: Record<string, unknown>) {
   if (Array.isArray(json.vulnerabilities)) {
     return json.vulnerabilities.filter(isRecord);
@@ -315,17 +341,8 @@ export const bunAdapter: PackageManagerAdapter = {
     };
   },
 
-  buildRemediationProcess(context) {
-    const args = ["update"];
-
-    if (context.scope === "prod") {
-      args.push("--production");
-    }
-
-    return {
-      command: "bun",
-      args,
-    };
+  buildRemediationProcess(_context) {
+    return null;
   },
 
   buildPostRemediationProcess() {
@@ -387,6 +404,14 @@ export const bunAdapter: PackageManagerAdapter = {
           : typeof advisoryWithUrl?.url === "string"
             ? advisoryWithUrl.url
             : undefined;
+      const advisoryWithVulnerableVersions = advisories.find(
+        (advisory) => typeof advisory.vulnerable_versions === "string",
+      );
+      const remediation = remediationFromVulnerableVersions(
+        typeof item.vulnerable_versions === "string"
+          ? item.vulnerable_versions
+          : advisoryWithVulnerableVersions?.vulnerable_versions,
+      );
 
       entries.push({
         key: vulnerabilityKey(packageName, installedVersion, advisoryIds),
@@ -394,6 +419,7 @@ export const bunAdapter: PackageManagerAdapter = {
         installedVersion,
         severity,
         advisoryIds,
+        remediation,
         title,
         url,
       });

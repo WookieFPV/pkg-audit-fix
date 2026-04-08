@@ -88,7 +88,7 @@ describe("adapter commands", () => {
     });
   });
 
-  it("builds bun commands with update-based remediation", () => {
+  it("builds bun audit commands without remediation support", () => {
     expect(
       bunAdapter.buildAuditProcess({ threshold: "moderate", scope: "all" }),
     ).toEqual({
@@ -106,10 +106,7 @@ describe("adapter commands", () => {
         threshold: "moderate",
         scope: "prod",
       }),
-    ).toEqual({
-      command: "bun",
-      args: ["update", "--production"],
-    });
+    ).toBeNull();
     expect(
       bunAdapter.buildDedupeProcess({ threshold: "moderate", scope: "prod" }),
     ).toBeNull();
@@ -194,6 +191,23 @@ describe("adapter commands", () => {
 });
 
 describe("adapter fixtures", () => {
+  it("parses bun fixture snapshots with remediation hints", () => {
+    const before = bunAdapter.parseAudit(readFixture("bun", "before.json"), {
+      threshold: "moderate",
+      scope: "all",
+    });
+    const braceExpansion = before.entries.find(
+      (entry) => entry.packageName === "brace-expansion",
+    );
+    const nodeForge = before.entries.find(
+      (entry) => entry.packageName === "node-forge",
+    );
+
+    expect(before.total).toBe(2);
+    expect(braceExpansion?.remediation).toBe("upgrade to >=1.1.13");
+    expect(nodeForge?.remediation).toBe("upgrade to >1.3.3");
+  });
+
   it("parses pnpm fixture snapshots", () => {
     const before = pnpmAdapter.parseAudit(readFixture("pnpm", "before.json"), {
       threshold: "moderate",

@@ -8,6 +8,7 @@ export interface StepLifecycleReporter {
   complete(step: StepEvent): void;
   fail(step: StepEvent): void;
   pause(): void;
+  hasOutput(): boolean;
 }
 
 interface CreateStepLifecycleReporterOptions {
@@ -41,6 +42,81 @@ function formatCommand(command: readonly string[]): string {
   return command.map(formatShellWord).join(" ");
 }
 
+function getDisplayText(label: string): {
+  running: string;
+  success: string;
+  failure: string;
+} {
+  switch (label) {
+    case "Initial audit":
+      return {
+        running: "Auditing dependencies",
+        success: "Audited dependencies",
+        failure: "Dependency audit failed",
+      };
+    case "Apply fixes":
+      return {
+        running: "Applying available fixes",
+        success: "Applied available fixes",
+        failure: "Applying available fixes failed",
+      };
+    case "Reinstall dependencies":
+      return {
+        running: "Reinstalling dependencies",
+        success: "Reinstalled dependencies",
+        failure: "Reinstalling dependencies failed",
+      };
+    case "Recheck after fixes":
+      return {
+        running: "Rechecking vulnerabilities",
+        success: "Rechecked vulnerabilities",
+        failure: "Rechecking vulnerabilities failed",
+      };
+    case "Final audit":
+      return {
+        running: "Checking remaining vulnerabilities",
+        success: "Checked remaining vulnerabilities",
+        failure: "Checking remaining vulnerabilities failed",
+      };
+    case "Consolidate dependency tree":
+      return {
+        running: "Consolidating dependency tree",
+        success: "Consolidated dependency tree",
+        failure: "Consolidating dependency tree failed",
+      };
+    case "Read pnpm minimumReleaseAgeExclude":
+      return {
+        running: "Reading pnpm minimumReleaseAge exclusions",
+        success: "Read pnpm minimumReleaseAge exclusions",
+        failure: "Reading pnpm minimumReleaseAge exclusions failed",
+      };
+    case "Update pnpm minimumReleaseAgeExclude":
+      return {
+        running: "Updating pnpm minimumReleaseAge exclusions",
+        success: "Updated pnpm minimumReleaseAge exclusions",
+        failure: "Updating pnpm minimumReleaseAge exclusions failed",
+      };
+    case "Update bun minimumReleaseAgeExcludes":
+      return {
+        running: "Updating bun minimumReleaseAge exclusions",
+        success: "Updated bun minimumReleaseAge exclusions",
+        failure: "Updating bun minimumReleaseAge exclusions failed",
+      };
+    case "Update yarn npmPreapprovedPackages":
+      return {
+        running: "Updating Yarn preapproved packages",
+        success: "Updated Yarn preapproved packages",
+        failure: "Updating Yarn preapproved packages failed",
+      };
+    default:
+      return {
+        running: label,
+        success: `${label} complete`,
+        failure: `${label} failed`,
+      };
+  }
+}
+
 export function createStepLifecycleReporter(
   options: CreateStepLifecycleReporterOptions,
 ): StepLifecycleReporter {
@@ -50,6 +126,9 @@ export function createStepLifecycleReporter(
       complete() {},
       fail() {},
       pause() {},
+      hasOutput() {
+        return false;
+      },
     };
   }
 
@@ -58,26 +137,30 @@ export function createStepLifecycleReporter(
   let activeSpinner: SpinnerLike | null = null;
   let activeStep: StepEvent | null = null;
   const pausedSteps = new Set<string>();
+  let wroteOutput = false;
 
-  const runningText = (label: string) => `${label}...`;
-  const successText = (step: StepEvent) => `${step.label} complete`;
-  const failureText = (label: string) => `${label} failed`;
+  const runningText = (step: StepEvent) =>
+    `${getDisplayText(step.label).running}...`;
+  const successText = (step: StepEvent) => getDisplayText(step.label).success;
+  const failureText = (step: StepEvent) => getDisplayText(step.label).failure;
   const fallbackSuccessText = (step: StepEvent) => `✔ ${successText(step)}\n`;
-  const fallbackFailureText = (step: StepEvent) =>
-    `✖ ${failureText(step.label)}\n`;
+  const fallbackFailureText = (step: StepEvent) => `✖ ${failureText(step)}\n`;
 
   return {
     start(step) {
       if (options.showCommands) {
+        wroteOutput = true;
         options.write(`$ ${formatCommand(step.command)}\n`);
       }
 
       if (!useSpinner) {
-        options.write(`${runningText(step.label)}\n`);
+        wroteOutput = true;
+        options.write(`${runningText(step)}\n`);
         return;
       }
 
-      activeSpinner = createSpinner(runningText(step.label), options.color);
+      wroteOutput = true;
+      activeSpinner = createSpinner(runningText(step), options.color);
       activeSpinner.start();
       activeStep = step;
     },
@@ -106,7 +189,7 @@ export function createStepLifecycleReporter(
       }
 
       if (activeSpinner && activeStep?.label === step.label) {
-        activeSpinner.fail(failureText(step.label));
+        activeSpinner.fail(failureText(step));
         activeSpinner = null;
         activeStep = null;
         return;
@@ -131,6 +214,10 @@ export function createStepLifecycleReporter(
       activeSpinner.stop();
       activeSpinner = null;
       activeStep = null;
+    },
+
+    hasOutput() {
+      return wroteOutput;
     },
   };
 }

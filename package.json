@@ -1,7 +1,7 @@
 {
   "name": "pkg-audit-fix",
   "version": "0.2.0",
-  "description": "Audit and remediate dependency vulnerabilities across pnpm, npm, yarn, and bun projects.",
+  "description": "CLI and API to audit dependencies and run package-manager-native fixes across pnpm, npm, yarn, and bun.",
   "type": "module",
   "bin": {
     "pkg-audit-fix": "./dist/cli.mjs"
@@ -38,7 +38,10 @@
   },
   "keywords": [
     "audit",
+    "audit-fix",
     "security",
+    "vulnerability",
+    "remediation",
     "dependencies",
     "pnpm",
     "npm",
@@ -47,6 +50,10 @@
     "cli"
   ],
   "license": "MIT",
+  "homepage": "https://github.com/WookieFPV/pkg-audit-fix#readme",
+  "bugs": {
+    "url": "https://github.com/WookieFPV/pkg-audit-fix/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/WookieFPV/pkg-audit-fix.git"

@@ -57,13 +57,12 @@ describe("formatTextSummary", () => {
       status: "resolved-some",
     });
 
-    expect(summary).toContain(
-      "fix(deps): resolve 2 vulnerabilities (apply fixes: 1, consolidate tree: 1)",
-    );
+    expect(summary).toContain("Resolved 2 vulnerabilities.");
+    expect(summary).toContain("Updated packages:");
     expect(summary).toContain(
       "- brace-expansion (1.1.12, 2.0.2): CVE-2026-33750, GHSA-F886-M6HF-6M8V",
     );
-    expect(summary).toContain("remaining: 1 vulnerability");
+    expect(summary).toContain("1 vulnerability remains.");
   });
 
   it("formats the clean case", () => {
@@ -99,8 +98,156 @@ describe("formatTextSummary", () => {
       status: "clean",
     });
 
+    expect(summary).toBe("No vulnerabilities found.");
+  });
+
+  it("formats dry-run output explicitly", () => {
+    const summary = formatTextSummary({
+      manager: "npm",
+      detectionSource: "user-agent",
+      threshold: "moderate",
+      scope: "prod",
+      dedupe: "auto",
+      dedupeRan: false,
+      dryRun: true,
+      initial: {
+        manager: "npm",
+        threshold: "moderate",
+        scope: "prod",
+        total: 2,
+        counts: { low: 0, moderate: 1, high: 1, critical: 0, total: 2 },
+        entries: [],
+      },
+      final: {
+        manager: "npm",
+        threshold: "moderate",
+        scope: "prod",
+        total: 2,
+        counts: { low: 0, moderate: 1, high: 1, critical: 0, total: 2 },
+        entries: [],
+      },
+      stepFixes: [],
+      fixedCount: 0,
+      remainingCount: 2,
+      fixed: [],
+      exitCode: 2,
+      status: "no-change",
+    });
+
     expect(summary).toBe(
-      "chore(deps): no vulnerabilities found\n\nremaining: 0 vulnerabilities",
+      "Found 2 vulnerabilities. No fixes were applied because this was a dry run.\n\n2 vulnerabilities remain.",
+    );
+  });
+
+  it("lists remaining bun vulnerabilities when nothing was resolved", () => {
+    const summary = formatTextSummary({
+      manager: "bun",
+      detectionSource: "filesystem",
+      threshold: "low",
+      scope: "all",
+      dedupe: "auto",
+      dedupeRan: false,
+      dryRun: false,
+      initial: {
+        manager: "bun",
+        threshold: "low",
+        scope: "all",
+        total: 2,
+        counts: { low: 1, moderate: 1, high: 0, critical: 0, total: 2 },
+        entries: [],
+      },
+      final: {
+        manager: "bun",
+        threshold: "low",
+        scope: "all",
+        total: 2,
+        counts: { low: 1, moderate: 1, high: 0, critical: 0, total: 2 },
+        entries: [
+          {
+            key: "lodash@4.17.20#GHSA-35JH-R3H4-6JHM",
+            packageName: "lodash",
+            installedVersion: "4.17.20",
+            severity: "high",
+            advisoryIds: ["GHSA-35JH-R3H4-6JHM"],
+            remediation: "upgrade to >=4.17.21",
+          },
+          {
+            key: "minimist@1.2.5#GHSA-VH95-RMGR-6W4M",
+            packageName: "minimist",
+            installedVersion: "1.2.5",
+            severity: "moderate",
+            advisoryIds: ["GHSA-VH95-RMGR-6W4M"],
+          },
+        ],
+      },
+      stepFixes: [],
+      fixedCount: 0,
+      remainingCount: 2,
+      fixed: [],
+      exitCode: 2,
+      status: "no-change",
+    });
+
+    expect(summary).toContain("No vulnerabilities were resolved.");
+    expect(summary).toContain("Bun does not support `audit --fix`.");
+    expect(summary).toContain("Remaining vulnerabilities:");
+    expect(summary).toContain(
+      "- lodash@4.17.20 [high]: GHSA-35JH-R3H4-6JHM; upgrade to >=4.17.21",
+    );
+  });
+
+  it("deduplicates repeated vulnerability lines and keeps remediation hints", () => {
+    const summary = formatTextSummary({
+      manager: "bun",
+      detectionSource: "filesystem",
+      threshold: "low",
+      scope: "all",
+      dedupe: "auto",
+      dedupeRan: false,
+      dryRun: false,
+      initial: {
+        manager: "bun",
+        threshold: "low",
+        scope: "all",
+        total: 2,
+        counts: { low: 0, moderate: 1, high: 1, critical: 0, total: 2 },
+        entries: [],
+      },
+      final: {
+        manager: "bun",
+        threshold: "low",
+        scope: "all",
+        total: 2,
+        counts: { low: 0, moderate: 1, high: 1, critical: 0, total: 2 },
+        entries: [
+          {
+            key: "brace-expansion@unknown#GHSA-F886-M6HF-6M8V",
+            packageName: "brace-expansion",
+            installedVersion: "unknown",
+            severity: "moderate",
+            advisoryIds: ["GHSA-F886-M6HF-6M8V"],
+            remediation: "upgrade to >=1.1.13",
+          },
+          {
+            key: "brace-expansion@unknown#GHSA-F886-M6HF-6M8V-dup",
+            packageName: "brace-expansion",
+            installedVersion: "unknown",
+            severity: "moderate",
+            advisoryIds: ["GHSA-F886-M6HF-6M8V"],
+          },
+        ],
+      },
+      stepFixes: [],
+      fixedCount: 0,
+      remainingCount: 2,
+      fixed: [],
+      exitCode: 2,
+      status: "no-change",
+    });
+
+    expect(summary.match(/brace-expansion/g)?.length).toBe(1);
+    expect(summary).toContain(
+      "- brace-expansion [moderate]: GHSA-F886-M6HF-6M8V; upgrade to >=1.1.13",
     );
   });
 });

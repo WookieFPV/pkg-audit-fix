@@ -1,58 +1,85 @@
 # pkg-audit-fix
 
-`pkg-audit-fix` is a standalone Node.js CLI that audits and remediates dependency vulnerabilities across `pnpm`, `npm`, `yarn`, and `bun` projects.
+`pkg-audit-fix` is a CLI for auditing dependencies and running the package-manager-native fix flow across `pnpm`, `npm`, `yarn`, and `bun`.
 
-## Install
+Use it when you want one command that:
+
+- detects the current package manager automatically
+- applies fixes where the manager supports them
+- re-audits and shows exactly what was fixed and what remains
+
+## Example
 
 ```bash
-npm install -g pkg-audit-fix
+npx pkg-audit-fix@latest
 ```
 
-## Usage
+```text
+✔ Audited dependencies
+✔ Applied available fixes
+✔ Reinstalled dependencies
+✔ Rechecked vulnerabilities
+
+Resolved 1 vulnerability.
+Updated packages:
+- defu@6.1.4: CVE-2026-35209, GHSA-737V-MQG7-C878
+
+No vulnerabilities remain.
+```
+
+## Getting Started
+
+Requires Node.js `>=20.19`.
+
+Run it without installing:
+
+```bash
+npx pkg-audit-fix@latest
+```
+
+Or install it globally:
+
+```bash
+npm install --global pkg-audit-fix
+pkg-audit-fix
+```
+
+## Common Usage
 
 ```bash
 pkg-audit-fix
 pkg-audit-fix --cwd ./app
-pkg-audit-fix --manager pnpm --verbose
-pkg-audit-fix --debug
-pkg-audit-fix --show-commands
 pkg-audit-fix --prod
 pkg-audit-fix --dev --audit-level high
 pkg-audit-fix --json
 ```
 
-## Behavior
+## Why Use It
 
-- Detects the active package manager automatically, with `--manager` available as an override.
-- Audits all dependencies by default. Use `--prod` or `--dev` to narrow the audit scope.
-- Uses `low` as the default advisory threshold. Override it with `--audit-level`.
-- Use `--debug` or `-d` to print the detected package manager and enable command echoing. When combined with `--json`, debug output is written to `stderr`.
-- Use `--show-commands` to print each underlying package-manager command. `--verbose` implies the same command echoing and also streams subprocess output.
-- Buffers package-manager output unless a step fails or `--verbose` is enabled.
-- Prints a commit-message-style summary with grouped advisories and a final remaining count.
+Package manager audit commands are inconsistent. `pkg-audit-fix` gives you a single workflow for:
 
-## Manager Notes
+- `pnpm`
+- `npm`
+- `yarn`
+- `bun`
 
-- `pnpm`: remediation runs `pnpm audit --json --fix` and then `pnpm install --no-frozen-lockfile --reporter ndjson`. If install is blocked by `minimumReleaseAge`, the CLI can prompt to append the blocked `name@version` entries to `minimumReleaseAgeExclude` and retry.
-- `npm`: remediation runs `npm audit fix --json`. Severity filtering is applied by `pkg-audit-fix` after parsing the audit report, because npm's `--audit-level` only changes npm's failure threshold.
-- `yarn` Classic: audits via `yarn audit --json`. Classic Yarn does not provide an `audit fix` flow, so `pkg-audit-fix` reports findings but does not apply package updates automatically.
-- `yarn` Berry: audits via `yarn npm audit --json --all --recursive` and can optionally run `yarn dedupe` after the audit pass.
-- `bun`: remediation runs `bun update --production` followed by a fresh audit. Bun is modeled as update-plus-reaudit in v1.
+Instead of remembering different audit and fix commands for each tool, you run one command and get a clear summary back.
 
-## Development
+## Package Manager Support
 
-```bash
-npm install
-npm run ci
-```
+- `pnpm`: audits, fixes, reinstalls, and can help recover from `minimumReleaseAge` blocks
+- `npm`: audits and runs `npm audit fix`
+- `yarn` Classic: audits and reports vulnerabilities
+- `yarn` Berry: audits, rechecks, and can run `yarn dedupe`
+- `bun`: audits, prompts for manual remediation because Bun does not support `audit --fix`, then re-audits and reports what remains
 
-## Releases
+## Useful Flags
 
-```bash
-bun run changeset
-```
-
-- Commit the generated changeset file with the code change it describes.
-- Configure npm trusted publishing for `pkg-audit-fix` against `.github/workflows/release.yml`.
-- The release workflow on `main` uses Changesets to open or update a release PR.
-- When that release PR is merged, the publish job uses GitHub Actions OIDC to publish to npm and also creates the matching GitHub release.
+- `--manager <auto|pnpm|npm|yarn|bun>`: override package manager detection
+- `--prod`: audit production dependencies only
+- `--dev`: audit development dependencies only
+- `--audit-level <low|moderate|high|critical>`: set the minimum advisory level
+- `--dry-run`: audit without applying fixes
+- `--json`: print a machine-readable summary
+- `--show-commands`: print the underlying package-manager commands
+- `--verbose`: stream subprocess output
