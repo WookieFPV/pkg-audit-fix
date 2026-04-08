@@ -31,7 +31,6 @@ const shellCommand = process.platform === "win32" ? "cmd.exe" : "zsh";
 const ptyCommand = resolvePtyCommand();
 const berryVersion = "4.13.0";
 const MINIMUM_AGE_WINDOW_DAYS = 30;
-const RECENT_PACKAGE_MAX_AGE_DAYS = 14;
 const RECENT_PACKAGE_CANDIDATES = [
   "typescript",
   "@types/node",
@@ -44,9 +43,9 @@ const MINIMUM_AGE_RECENT_PACKAGE_CANDIDATES: Record<
   readonly string[]
 > = {
   npm: [],
-  pnpm: ["typescript"],
-  bun: ["typescript"],
-  "yarn-berry": ["typescript"],
+  pnpm: RECENT_PACKAGE_CANDIDATES,
+  bun: RECENT_PACKAGE_CANDIDATES,
+  "yarn-berry": RECENT_PACKAGE_CANDIDATES,
 };
 
 interface ManagerCase {
@@ -654,7 +653,6 @@ async function resolveRecentPackage(
   candidates: readonly string[] = RECENT_PACKAGE_CANDIDATES,
 ): Promise<RecentPackage> {
   const now = Date.now();
-  const maxAgeMs = RECENT_PACKAGE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
   const minimumAgeMs = MINIMUM_AGE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
   for (const packageName of candidates) {
@@ -665,46 +663,41 @@ async function resolveRecentPackage(
       envOverrides: {} as EnvMap,
     });
     const parsed = JSON.parse(result.stdout) as {
-      version?: string;
       versions?: string[];
       time?: Record<string, string>;
     };
-    const version = parsed.version;
-    const publishedAt = version ? parsed.time?.[version] : undefined;
     const versions = Array.isArray(parsed.versions) ? parsed.versions : [];
 
-    if (!version || !publishedAt || versions.length === 0) {
+    if (versions.length === 0) {
       continue;
     }
 
-    const publishedMs = Date.parse(publishedAt);
+    const stableVersions = [...versions]
+      .reverse()
+      .filter((version) => !version.includes("-"));
+    const versionWithPublishTimes = stableVersions.flatMap((version) => {
+      const publishedAt = parsed.time?.[version];
 
-    if (!Number.isFinite(publishedMs) || now - publishedMs > maxAgeMs) {
-      continue;
-    }
-
-    const matureVersion = [...versions].reverse().find((candidateVersion) => {
-      if (candidateVersion === version) {
-        return false;
+      if (!publishedAt) {
+        return [];
       }
 
-      if (candidateVersion.includes("-")) {
-        return false;
-      }
+      const publishedMs = Date.parse(publishedAt);
 
-      const candidatePublishedAt = parsed.time?.[candidateVersion];
-
-      if (!candidatePublishedAt) {
-        return false;
-      }
-
-      const candidatePublishedMs = Date.parse(candidatePublishedAt);
-
-      return (
-        Number.isFinite(candidatePublishedMs) &&
-        now - candidatePublishedMs > minimumAgeMs
-      );
+      return Number.isFinite(publishedMs) ? [{ version, publishedMs }] : [];
     });
+    const recentVersion = versionWithPublishTimes.find(
+      ({ publishedMs }) => now - publishedMs < minimumAgeMs,
+    );
+
+    if (!recentVersion) {
+      continue;
+    }
+
+    const matureVersion = versionWithPublishTimes.find(
+      ({ version, publishedMs }) =>
+        version !== recentVersion.version && now - publishedMs >= minimumAgeMs,
+    )?.version;
 
     if (!matureVersion) {
       continue;
@@ -712,8 +705,8 @@ async function resolveRecentPackage(
 
     return {
       packageName,
-      version,
-      specifier: `${packageName}@${version}`,
+      version: recentVersion.version,
+      specifier: `${packageName}@${recentVersion.version}`,
       matureVersion,
       matureSpecifier: `${packageName}@${matureVersion}`,
     };
@@ -878,12 +871,8 @@ describe.sequential("CLI vulnerability remediation", () => {
     await expectRealVulnerabilityRemediation(getManagerCase("pnpm"));
   });
 
-  it("fixes a real bun vulnerability in a temp project", {
-    timeout: E2E_TIMEOUT_MS,
-  }, async () => {
-    await expectRealVulnerabilityRemediation(getManagerCase("bun"));
-  });
-
+  // Bun remediation is intentionally manual, so it is covered in unit tests
+  // rather than the non-interactive E2E flow.
   it("fixes a real yarn vulnerability in a temp project", {
     timeout: E2E_TIMEOUT_MS,
   }, async () => {
@@ -895,12 +884,6 @@ describe.sequential("CLI vulnerability remediation", () => {
       timeout: E2E_TIMEOUT_MS,
     }, async () => {
       await expectMinimumAgeRecovery(getManagerCase("pnpm"));
-    });
-
-    it("recovers bun minimum age gating during remediation", {
-      timeout: E2E_TIMEOUT_MS,
-    }, async () => {
-      await expectMinimumAgeRecovery(getManagerCase("bun"));
     });
 
     it("recovers yarn-berry minimum age gating during remediation", {

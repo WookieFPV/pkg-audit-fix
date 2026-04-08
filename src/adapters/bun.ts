@@ -341,7 +341,7 @@ export const bunAdapter: PackageManagerAdapter = {
     };
   },
 
-  buildRemediationProcess(context) {
+  buildRemediationProcess(_context) {
     return null;
   },
 
