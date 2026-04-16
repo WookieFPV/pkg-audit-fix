@@ -42,11 +42,55 @@ function formatCommand(command: readonly string[]): string {
   return command.map(formatShellWord).join(" ");
 }
 
+function splitSummaryLabel(label: string, prefix: string): string | null {
+  if (label === prefix) {
+    return "";
+  }
+
+  const withSeparator = `${prefix}: `;
+
+  return label.startsWith(withSeparator)
+    ? label.slice(withSeparator.length)
+    : null;
+}
+
 function getDisplayText(label: string): {
   running: string;
   success: string;
   failure: string;
 } {
+  const cleanPnpmMinimumReleaseAgeExcludeSummary = splitSummaryLabel(
+    label,
+    "Clean pnpm minimumReleaseAgeExclude",
+  );
+
+  if (cleanPnpmMinimumReleaseAgeExcludeSummary !== null) {
+    return {
+      running: "Cleaning pnpm minimumReleaseAge exclusions",
+      success:
+        cleanPnpmMinimumReleaseAgeExcludeSummary.length > 0
+          ? `Cleaned pnpm minimumReleaseAge exclusions (${cleanPnpmMinimumReleaseAgeExcludeSummary})`
+          : "Cleaned pnpm minimumReleaseAge exclusions",
+      failure: "Cleaning pnpm minimumReleaseAge exclusions failed",
+    };
+  }
+
+  const updatePnpmMinimumReleaseAgeExcludeSummary = splitSummaryLabel(
+    label,
+    "Update pnpm minimumReleaseAgeExclude",
+  );
+
+  if (updatePnpmMinimumReleaseAgeExcludeSummary !== null) {
+    return {
+      running: "Updating pnpm minimumReleaseAge exclusions",
+      success:
+        updatePnpmMinimumReleaseAgeExcludeSummary.length > 0
+          ? `Updated pnpm minimumReleaseAge exclusions (${updatePnpmMinimumReleaseAgeExcludeSummary})`
+          : "Updated pnpm minimumReleaseAge exclusions",
+      failure: "Updating pnpm minimumReleaseAge exclusions failed",
+    };
+  }
+
   switch (label) {
     case "Initial audit":
       return {
@@ -89,12 +133,6 @@ function getDisplayText(label: string): {
         running: "Reading pnpm minimumReleaseAge exclusions",
         success: "Read pnpm minimumReleaseAge exclusions",
         failure: "Reading pnpm minimumReleaseAge exclusions failed",
-      };
-    case "Update pnpm minimumReleaseAgeExclude":
-      return {
-        running: "Updating pnpm minimumReleaseAge exclusions",
-        success: "Updated pnpm minimumReleaseAge exclusions",
-        failure: "Updating pnpm minimumReleaseAge exclusions failed",
       };
     case "Update bun minimumReleaseAgeExcludes":
       return {

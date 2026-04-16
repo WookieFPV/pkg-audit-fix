@@ -98,6 +98,7 @@ describe("runAuditFix", () => {
 
     expect(steps).toEqual([
       "Initial audit",
+      "Read pnpm minimumReleaseAgeExclude",
       "Apply fixes",
       "Reinstall dependencies",
       "Final audit",
@@ -121,6 +122,10 @@ describe("runAuditFix", () => {
     const startedSteps: string[] = [];
     const completedSteps: string[] = [];
     let reinstallAttempts = 0;
+    let currentPnpmMinimumReleaseAgeExclude = '["left-pad@1.0.0"]';
+    const stalePublishedAt = new Date(
+      Date.now() - 40 * 24 * 60 * 60 * 1000,
+    ).toISOString();
     const confirmPnpmMinimumReleaseAgeExclusions = vi.fn(async () => true);
     const exec = vi.fn(async (step) => {
       steps.push(step.label);
@@ -206,22 +211,56 @@ describe("runAuditFix", () => {
         return {
           command: step.command,
           args: step.args,
-          stdout: '["left-pad@1.0.0"]',
+          stdout: currentPnpmMinimumReleaseAgeExclude,
           stderr: "",
           exitCode: 0,
           signal: null,
         };
       }
 
-      if (step.label === "Update pnpm minimumReleaseAgeExclude") {
+      if (step.label === "Read pnpm minimumReleaseAge") {
         expect(step.args).toEqual([
           "config",
-          "set",
-          "--location=project",
+          "get",
           "--json",
-          "minimumReleaseAgeExclude",
-          '["left-pad@1.0.0","lodash@4.18.1","chalk@5.4.0"]',
+          "minimumReleaseAge",
         ]);
+
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "43200",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Read pnpm package publish times") {
+        expect(step.args).toEqual(["view", "left-pad", "time", "--json"]);
+
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: JSON.stringify({
+            "1.0.0": stalePublishedAt,
+          }),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (
+        step.label.startsWith("Update pnpm minimumReleaseAgeExclude") ||
+        step.label.startsWith("Clean pnpm minimumReleaseAgeExclude")
+      ) {
+        const nextExclusions = step.args[5];
+
+        expect(nextExclusions).toMatch(
+          /^(?:\[\]|\\?\["lodash@4\.18\.1","chalk@5\.4\.0"\\?\])$/,
+        );
+        currentPnpmMinimumReleaseAgeExclude = nextExclusions;
 
         return {
           command: step.command,
@@ -283,30 +322,172 @@ describe("runAuditFix", () => {
     });
     expect(steps).toEqual([
       "Initial audit",
+      "Read pnpm minimumReleaseAgeExclude",
+      "Read pnpm minimumReleaseAge",
+      "Read pnpm package publish times",
+      "Clean pnpm minimumReleaseAgeExclude: removed 1 unneeded entry",
       "Apply fixes",
       "Reinstall dependencies",
       "Read pnpm minimumReleaseAgeExclude",
-      "Update pnpm minimumReleaseAgeExclude",
+      "Update pnpm minimumReleaseAgeExclude: added 2 new entries",
       "Reinstall dependencies",
       "Final audit",
     ]);
     expect(startedSteps).toEqual([
       "Initial audit",
+      "Clean pnpm minimumReleaseAgeExclude: removed 1 unneeded entry",
       "Apply fixes",
       "Reinstall dependencies",
-      "Update pnpm minimumReleaseAgeExclude",
+      "Update pnpm minimumReleaseAgeExclude: added 2 new entries",
       "Final audit",
     ]);
     expect(completedSteps).toEqual([
       "Initial audit",
+      "Clean pnpm minimumReleaseAgeExclude: removed 1 unneeded entry",
       "Apply fixes",
-      "Update pnpm minimumReleaseAgeExclude",
+      "Update pnpm minimumReleaseAgeExclude: added 2 new entries",
       "Reinstall dependencies",
       "Final audit",
     ]);
     expect(reinstallAttempts).toBe(2);
     expect(result.fixedCount).toBe(3);
     expect(result.remainingCount).toBe(0);
+  });
+
+  it("validates pnpm minimumReleaseAgeExclude during normal runs and removes stale entries without requiring .npmrc", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pkg-audit-fix-pnpm-"));
+    const steps: string[] = [];
+    const startedSteps: string[] = [];
+    const completedSteps: string[] = [];
+    const stalePublishedAt = new Date(
+      Date.now() - 40 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const exec = vi.fn(async (step) => {
+      steps.push(step.label);
+
+      if (step.label === "Initial audit") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: readFixture("pnpm", "after.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Read pnpm minimumReleaseAgeExclude") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: '["left-pad@1.0.0"]',
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Read pnpm minimumReleaseAge") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "43200",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label === "Read pnpm package publish times") {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: JSON.stringify({
+            "1.0.0": stalePublishedAt,
+          }),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (step.label.startsWith("Clean pnpm minimumReleaseAgeExclude")) {
+        expect(step.args).toEqual([
+          "config",
+          "set",
+          "--location=project",
+          "--json",
+          "minimumReleaseAgeExclude",
+          "[]",
+        ]);
+
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      throw new Error(`Unexpected step: ${step.label}`);
+    });
+
+    fs.writeFileSync(
+      path.join(cwd, "pnpm-workspace.yaml"),
+      'packages:\n  - "."\nminimumReleaseAgeExclude:\n  - left-pad@1.0.0\n',
+      "utf8",
+    );
+
+    try {
+      const result = await runAuditFix(
+        {
+          cwd,
+          manager: "pnpm",
+          scope: "prod",
+          threshold: "moderate",
+          dedupe: "never",
+          dryRun: false,
+          verbose: false,
+        },
+        {
+          detectManager: async () => ({
+            manager: "pnpm",
+            agent: "pnpm",
+            source: "override",
+          }),
+          exec,
+          hooks: {
+            onStepStart: (step) => {
+              startedSteps.push(step.label);
+            },
+            onStepComplete: (step) => {
+              completedSteps.push(step.label);
+            },
+          },
+        },
+      );
+
+      expect(steps).toEqual([
+        "Initial audit",
+        "Read pnpm minimumReleaseAgeExclude",
+        "Read pnpm minimumReleaseAge",
+        "Read pnpm package publish times",
+        "Clean pnpm minimumReleaseAgeExclude: removed 1 unneeded entry",
+      ]);
+      expect(startedSteps).toEqual([
+        "Initial audit",
+        "Clean pnpm minimumReleaseAgeExclude: removed 1 unneeded entry",
+      ]);
+      expect(completedSteps).toEqual([
+        "Initial audit",
+        "Clean pnpm minimumReleaseAgeExclude: removed 1 unneeded entry",
+      ]);
+      expect(result.status).toBe("clean");
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("fails with a concise minimumReleaseAge error when the prompt is declined", async () => {
@@ -548,6 +729,7 @@ describe("runAuditFix", () => {
 
     expect(steps).toEqual([
       "Initial audit",
+      "Read pnpm minimumReleaseAgeExclude",
       "Apply fixes",
       "Reinstall dependencies",
       "Recheck after fixes",

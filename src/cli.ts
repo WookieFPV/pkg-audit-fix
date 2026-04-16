@@ -262,11 +262,10 @@ async function confirmPnpmMinimumReleaseAgeExclusions(input: {
     output: input.output,
   });
   const packageList = input.packages.join(", ");
-  const pronoun = input.packages.length === 1 ? "it" : "them";
 
   try {
     const answer = await rl.question(
-      `${input.manager} blocked ${packageList} because of minimumReleaseAge. Add ${pronoun} to ${input.configSetting} and retry? [y/N] `,
+      `${input.manager} blocked ${packageList} because of minimumReleaseAge. Update ${input.configSetting} and retry? [y/N] `,
     );
 
     return /^(y|yes)$/i.test(answer.trim());

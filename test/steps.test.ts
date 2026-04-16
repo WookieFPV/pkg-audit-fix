@@ -111,11 +111,11 @@ describe("createStepLifecycleReporter", () => {
     });
     reporter.pause();
     reporter.start({
-      label: "Update pnpm minimumReleaseAgeExclude",
+      label: "Update pnpm minimumReleaseAgeExclude: added 2 new entries",
       command: ["pnpm", "config", "set"],
     });
     reporter.complete({
-      label: "Update pnpm minimumReleaseAgeExclude",
+      label: "Update pnpm minimumReleaseAgeExclude: added 2 new entries",
       command: ["pnpm", "config", "set"],
     });
     reporter.complete({
@@ -125,9 +125,30 @@ describe("createStepLifecycleReporter", () => {
 
     expect(reinstallSpinner.stop).toHaveBeenCalledOnce();
     expect(updateSpinner.succeed).toHaveBeenCalledWith(
-      "Updated pnpm minimumReleaseAge exclusions",
+      "Updated pnpm minimumReleaseAge exclusions (added 2 new entries)",
     );
     expect(writes).toEqual(["✔ Reinstalled dependencies\n"]);
+  });
+
+  it("prints a dedicated cleanup message for pnpm minimumReleaseAge exclusions", () => {
+    const writes: string[] = [];
+    const reporter = createStepLifecycleReporter({
+      enabled: true,
+      color: true,
+      verbose: false,
+      showCommands: false,
+      isInteractive: false,
+      write: (text) => {
+        writes.push(text);
+      },
+    });
+
+    reporter.start({
+      label: "Clean pnpm minimumReleaseAgeExclude: removed 1 unneeded entry",
+      command: ["pnpm", "config", "set"],
+    });
+
+    expect(writes).toEqual(["Cleaning pnpm minimumReleaseAge exclusions...\n"]);
   });
 
   it("does not use a spinner in verbose mode", () => {

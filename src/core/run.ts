@@ -9,7 +9,9 @@ import {
 import { getAdapter } from "../adapters/index.js";
 import {
   extractPnpmMinimumReleaseAgeExclusions,
+  parsePnpmMinimumReleaseAgeConfig,
   parsePnpmMinimumReleaseAgeExcludeConfig,
+  parsePnpmPackagePublishedTimes,
 } from "../adapters/pnpm.js";
 import {
   extractYarnMinimumReleaseAgeExclusions,
@@ -80,6 +82,76 @@ function shouldRunDedupe(input: {
   }
 
   return input.remainingCount > 0;
+}
+
+const EXACT_PNPM_VERSION_PATTERN =
+  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
+
+function parseExactPnpmExclusionSpecifier(
+  specifier: string,
+): { packageName: string; version: string } | null {
+  const separatorIndex = specifier.lastIndexOf("@");
+
+  if (separatorIndex <= 0 || separatorIndex >= specifier.length - 1) {
+    return null;
+  }
+
+  const packageName = specifier.slice(0, separatorIndex);
+  const version = specifier.slice(separatorIndex + 1);
+
+  if (!EXACT_PNPM_VERSION_PATTERN.test(version)) {
+    return null;
+  }
+
+  return { packageName, version };
+}
+
+function sameStringList(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => entry === right[index])
+  );
+}
+
+function dedupeStringList(entries: readonly string[]): string[] {
+  return [...new Set(entries)];
+}
+
+function formatCountLabel(
+  count: number,
+  singular: string,
+  plural: string,
+): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function createPnpmMinimumReleaseAgeExcludeUpdateLabel(input: {
+  removedCount: number;
+  addedCount: number;
+}): string {
+  const details: string[] = [];
+
+  if (input.removedCount > 0) {
+    details.push(
+      `removed ${formatCountLabel(input.removedCount, "unneeded entry", "unneeded entries")}`,
+    );
+  }
+
+  if (input.addedCount > 0) {
+    details.push(
+      `added ${formatCountLabel(input.addedCount, "new entry", "new entries")}`,
+    );
+  }
+
+  const prefix =
+    input.addedCount > 0
+      ? "Update pnpm minimumReleaseAgeExclude"
+      : "Clean pnpm minimumReleaseAgeExclude";
+
+  return details.length > 0 ? `${prefix}: ${details.join(", ")}` : prefix;
 }
 
 export async function runAuditFix(
@@ -312,6 +384,187 @@ export async function runAuditFix(
     fs.writeFileSync(yarnrcPath, nextSource, "utf8");
   };
 
+  const readPnpmMinimumReleaseAge = async (): Promise<number | null> => {
+    const result = await runStep(
+      withLabel("Read pnpm minimumReleaseAge", "pnpm", [
+        "config",
+        "get",
+        "--json",
+        "minimumReleaseAge",
+      ]),
+      undefined,
+      { silent: true },
+    );
+
+    return parsePnpmMinimumReleaseAgeConfig(result.stdout);
+  };
+
+  const readPnpmMinimumReleaseAgeExclude = async (): Promise<string[]> => {
+    const result = await runStep(
+      withLabel("Read pnpm minimumReleaseAgeExclude", "pnpm", [
+        "config",
+        "get",
+        "--location=project",
+        "--json",
+        "minimumReleaseAgeExclude",
+      ]),
+      undefined,
+      { silent: true },
+    );
+
+    return parsePnpmMinimumReleaseAgeExcludeConfig(result.stdout);
+  };
+
+  const retainNeededPnpmMinimumReleaseAgeExclusions = async (
+    exclusions: string[],
+  ): Promise<string[]> => {
+    if (exclusions.length === 0) {
+      return exclusions;
+    }
+
+    const minimumReleaseAgeMinutes = await readPnpmMinimumReleaseAge();
+
+    if (minimumReleaseAgeMinutes === null) {
+      return exclusions;
+    }
+
+    const minimumReleaseAgeMs = minimumReleaseAgeMinutes * 60_000;
+    const publishedTimesByPackage = new Map<
+      string,
+      Promise<Record<string, string> | null>
+    >();
+
+    const readPublishedTimes = (packageName: string) => {
+      let publishedTimes = publishedTimesByPackage.get(packageName);
+
+      if (!publishedTimes) {
+        publishedTimes = (async () => {
+          try {
+            const result = await runStep(
+              withLabel("Read pnpm package publish times", "pnpm", [
+                "view",
+                packageName,
+                "time",
+                "--json",
+              ]),
+              undefined,
+              { silent: true },
+            );
+
+            return parsePnpmPackagePublishedTimes(result.stdout);
+          } catch {
+            return null;
+          }
+        })();
+        publishedTimesByPackage.set(packageName, publishedTimes);
+      }
+
+      return publishedTimes;
+    };
+
+    const nextExclusions: string[] = [];
+    const now = Date.now();
+
+    for (const specifier of exclusions) {
+      const parsedSpecifier = parseExactPnpmExclusionSpecifier(specifier);
+
+      if (!parsedSpecifier) {
+        nextExclusions.push(specifier);
+        continue;
+      }
+
+      const publishedTimes = await readPublishedTimes(
+        parsedSpecifier.packageName,
+      );
+      const publishedAt = publishedTimes?.[parsedSpecifier.version];
+
+      if (!publishedAt) {
+        nextExclusions.push(specifier);
+        continue;
+      }
+
+      const publishedMs = Date.parse(publishedAt);
+
+      if (!Number.isFinite(publishedMs)) {
+        nextExclusions.push(specifier);
+        continue;
+      }
+
+      if (minimumReleaseAgeMs > 0 && now - publishedMs < minimumReleaseAgeMs) {
+        nextExclusions.push(specifier);
+      }
+    }
+
+    return nextExclusions;
+  };
+
+  const validatePnpmMinimumReleaseAgeExclusions = async (
+    storedExclusions: string[],
+  ): Promise<{
+    currentExclusions: string[];
+    storedExclusions: string[];
+  }> => {
+    const normalizedStoredExclusions = dedupeStringList(storedExclusions);
+
+    return {
+      storedExclusions,
+      currentExclusions: await retainNeededPnpmMinimumReleaseAgeExclusions(
+        normalizedStoredExclusions,
+      ),
+    };
+  };
+
+  const writePnpmMinimumReleaseAgeExclude = async (
+    exclusions: string[],
+    stepLabel: string,
+  ): Promise<void> => {
+    await runStep(
+      withLabel(stepLabel, "pnpm", [
+        "config",
+        "set",
+        "--location=project",
+        "--json",
+        "minimumReleaseAgeExclude",
+        JSON.stringify(exclusions),
+      ]),
+    );
+  };
+
+  const maintainPnpmMinimumReleaseAgeExclude = async (): Promise<void> => {
+    if (options.dryRun || detection.manager !== "pnpm") {
+      return;
+    }
+
+    const storedExclusions = await readPnpmMinimumReleaseAgeExclude();
+
+    if (storedExclusions.length === 0) {
+      return;
+    }
+
+    const validatedExclusions =
+      await validatePnpmMinimumReleaseAgeExclusions(storedExclusions);
+
+    if (
+      sameStringList(
+        validatedExclusions.storedExclusions,
+        validatedExclusions.currentExclusions,
+      )
+    ) {
+      return;
+    }
+
+    const stepLabel = createPnpmMinimumReleaseAgeExcludeUpdateLabel({
+      removedCount:
+        storedExclusions.length - validatedExclusions.currentExclusions.length,
+      addedCount: 0,
+    });
+
+    await writePnpmMinimumReleaseAgeExclude(
+      validatedExclusions.currentExclusions,
+      stepLabel,
+    );
+  };
+
   const recoverMinimumReleaseAgeFailure = async (
     error: unknown,
     step: CommandStep,
@@ -330,6 +583,17 @@ export async function runAuditFix(
       | "npmPreapprovedPackages";
     let requestedExclusions: { specifier: string }[];
     let currentExclusions: string[];
+    let storedExclusions: string[] | null = null;
+    let pausedRecoveryFlow = false;
+
+    const pauseRecoveryFlow = () => {
+      if (pausedRecoveryFlow) {
+        return;
+      }
+
+      dependencies.hooks?.onInteractivePrompt?.();
+      pausedRecoveryFlow = true;
+    };
 
     if (detection.manager === "pnpm") {
       manager = "pnpm";
@@ -337,24 +601,16 @@ export async function runAuditFix(
       requestedExclusions = extractPnpmMinimumReleaseAgeExclusions(
         error.result,
       );
+      storedExclusions = await readPnpmMinimumReleaseAgeExclude();
 
-      const getConfigStep = withLabel(
-        "Read pnpm minimumReleaseAgeExclude",
-        "pnpm",
-        [
-          "config",
-          "get",
-          "--location=project",
-          "--json",
-          "minimumReleaseAgeExclude",
-        ],
-      );
-      const currentConfigResult = await runStep(getConfigStep, undefined, {
-        silent: true,
-      });
-      currentExclusions = parsePnpmMinimumReleaseAgeExcludeConfig(
-        currentConfigResult.stdout,
-      );
+      if (storedExclusions.length > 0) {
+        const validatedExclusions =
+          await validatePnpmMinimumReleaseAgeExclusions(storedExclusions);
+
+        currentExclusions = validatedExclusions.currentExclusions;
+      } else {
+        currentExclusions = [];
+      }
     } else if (detection.manager === "bun") {
       manager = "bun";
       configSetting = "minimumReleaseAgeExcludes";
@@ -386,13 +642,18 @@ export async function runAuditFix(
       return null;
     }
 
-    dependencies.hooks?.onInteractivePrompt?.();
-    const shouldRetry =
-      await dependencies.confirmPnpmMinimumReleaseAgeExclusions({
-        manager,
-        configSetting,
-        packages: nextExclusions.map((entry) => entry.specifier),
-      });
+    let shouldRetry = false;
+    let shouldUpdateConfig =
+      storedExclusions !== null &&
+      !sameStringList(storedExclusions, currentExclusions);
+    const updatedExclusions = [...currentExclusions];
+
+    pauseRecoveryFlow();
+    shouldRetry = await dependencies.confirmPnpmMinimumReleaseAgeExclusions({
+      manager,
+      configSetting,
+      packages: nextExclusions.map((entry) => entry.specifier),
+    });
 
     if (!shouldRetry) {
       throw new MinimumReleaseAgeDeclinedError({
@@ -403,24 +664,28 @@ export async function runAuditFix(
       });
     }
 
-    const updatedExclusions = [...currentExclusions];
+    shouldUpdateConfig = true;
 
     for (const entry of nextExclusions) {
       attemptedMinimumReleaseAgeExclusions.add(entry.specifier);
       updatedExclusions.push(entry.specifier);
     }
 
+    if (!shouldUpdateConfig) {
+      return null;
+    }
+
     if (manager === "pnpm") {
-      await runStep(
-        withLabel("Update pnpm minimumReleaseAgeExclude", "pnpm", [
-          "config",
-          "set",
-          "--location=project",
-          "--json",
-          "minimumReleaseAgeExclude",
-          JSON.stringify(updatedExclusions),
-        ]),
-      );
+      const stepLabel = createPnpmMinimumReleaseAgeExcludeUpdateLabel({
+        removedCount:
+          storedExclusions === null
+            ? 0
+            : storedExclusions.length +
+              nextExclusions.length -
+              updatedExclusions.length,
+        addedCount: nextExclusions.length,
+      });
+      await writePnpmMinimumReleaseAgeExclude(updatedExclusions, stepLabel);
     } else {
       if (manager === "bun") {
         await runActionStep(
@@ -445,6 +710,10 @@ export async function runAuditFix(
           },
         );
       }
+    }
+
+    if (!shouldRetry) {
+      return null;
     }
 
     try {
@@ -477,6 +746,8 @@ export async function runAuditFix(
   const initial = parseAuditResult(initialAuditStep, initialAuditResult, () =>
     adapter.parseAudit(initialAuditResult.stdout, context),
   );
+
+  await maintainPnpmMinimumReleaseAgeExclude();
 
   if (initial.total === 0) {
     return {

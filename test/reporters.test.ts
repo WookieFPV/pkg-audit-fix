@@ -294,7 +294,7 @@ describe("formatFailure", () => {
     );
 
     expect(output).toBe(
-      "Reason: minimumReleaseAge blocked pnpm install for lodash@4.18.1, chalk@5.4.0. Rerun and answer Y to add them to minimumReleaseAgeExclude automatically.",
+      "Reason: minimumReleaseAge blocked pnpm install for lodash@4.18.1, chalk@5.4.0. Rerun and answer Y to update minimumReleaseAgeExclude automatically.",
     );
   });
 });

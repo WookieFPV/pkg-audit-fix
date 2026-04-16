@@ -9,7 +9,9 @@ import {
 import { npmAdapter } from "../src/adapters/npm.js";
 import {
   extractPnpmMinimumReleaseAgeExclusions,
+  parsePnpmMinimumReleaseAgeConfig,
   parsePnpmMinimumReleaseAgeExcludeConfig,
+  parsePnpmPackagePublishedTimes,
   pnpmAdapter,
 } from "../src/adapters/pnpm.js";
 import {
@@ -302,6 +304,23 @@ describe("adapter fixtures", () => {
         '["lodash@4.18.1","chalk@5.4.0"]',
       ),
     ).toEqual(["lodash@4.18.1", "chalk@5.4.0"]);
+  });
+
+  it("parses pnpm minimumReleaseAge config output", () => {
+    expect(parsePnpmMinimumReleaseAgeConfig("null")).toBeNull();
+    expect(parsePnpmMinimumReleaseAgeConfig("43200")).toBe(43200);
+    expect(parsePnpmMinimumReleaseAgeConfig('"43200"')).toBe(43200);
+  });
+
+  it("parses pnpm package publish times output", () => {
+    expect(
+      parsePnpmPackagePublishedTimes(
+        '{"created":"2024-01-01T00:00:00.000Z","1.0.0":"2024-01-02T00:00:00.000Z","dist-tag":true}',
+      ),
+    ).toEqual({
+      created: "2024-01-01T00:00:00.000Z",
+      "1.0.0": "2024-01-02T00:00:00.000Z",
+    });
   });
 
   it("ignores bun non-age resolution failures that only say package exists", () => {

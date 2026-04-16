@@ -197,14 +197,13 @@ export class MinimumReleaseAgeDeclinedError extends Error {
   }) {
     const { step, manager, configSetting, packages } = input;
     const packageList = packages.join(", ");
-    const pronoun = packages.length === 1 ? "it" : "them";
     const action =
       step.args[0] && step.args[0].length > 0
         ? `${step.command} ${step.args[0]}`
         : step.command;
 
     super(
-      `minimumReleaseAge blocked ${action} for ${packageList}. Rerun and answer Y to add ${pronoun} to ${configSetting} automatically.`,
+      `minimumReleaseAge blocked ${action} for ${packageList}. Rerun and answer Y to update ${configSetting} automatically.`,
     );
     this.name = "MinimumReleaseAgeDeclinedError";
     this.step = step;

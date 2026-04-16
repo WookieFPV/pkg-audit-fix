@@ -191,6 +191,54 @@ export function parsePnpmMinimumReleaseAgeExcludeConfig(
   return [];
 }
 
+export function parsePnpmMinimumReleaseAgeConfig(
+  stdout: string,
+): number | null {
+  const trimmed = stdout.trim();
+
+  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
+    return null;
+  }
+
+  const parsed = JSON.parse(trimmed) as unknown;
+
+  if (typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+
+  if (typeof parsed === "string" && parsed.trim().length > 0) {
+    const value = Number(parsed);
+
+    if (Number.isFinite(value) && value >= 0) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+export function parsePnpmPackagePublishedTimes(
+  stdout: string,
+): Record<string, string> {
+  const trimmed = stdout.trim();
+
+  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
+    return {};
+  }
+
+  const parsed = JSON.parse(trimmed) as unknown;
+
+  if (!isRecord(parsed)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+}
+
 export const pnpmAdapter: PackageManagerAdapter = {
   manager: "pnpm",
   auditExitCodes: [0, 1],

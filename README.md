@@ -1,35 +1,14 @@
-# pkg-audit-fix
+# pkg-audit-fix [![npm][npm-image]][npm-url] ![npm][npm-dl-stats]
 
-`pkg-audit-fix` is a CLI for auditing dependencies and running the package-manager-native fix flow across `pnpm`, `npm`, `yarn`, and `bun`.
+Audit dependencies and run the native fix flow across `pnpm`, `npm`, `yarn`, and `bun`.
 
-Use it when you want one command that:
+`pkg-audit-fix` gives you one command that detects the current package manager, runs the best available audit and remediation flow for it, and prints a clean summary of what changed and what still needs attention.
 
-- detects the current package manager automatically
-- applies fixes where the manager supports them
-- re-audits and shows exactly what was fixed and what remains
+## Requirements
 
-## Example
+- Node.js `>=20.19`
 
-```bash
-npx pkg-audit-fix@latest
-```
-
-```text
-✔ Audited dependencies
-✔ Applied available fixes
-✔ Reinstalled dependencies
-✔ Rechecked vulnerabilities
-
-Resolved 1 vulnerability.
-Updated packages:
-- defu@6.1.4: CVE-2026-35209, GHSA-737V-MQG7-C878
-
-No vulnerabilities remain.
-```
-
-## Getting Started
-
-Requires Node.js `>=20.19`.
+## CLI Usage
 
 Run it without installing:
 
@@ -44,34 +23,24 @@ npm install --global pkg-audit-fix
 pkg-audit-fix
 ```
 
-## Common Usage
+## Common Commands
 
 ```bash
 pkg-audit-fix
 pkg-audit-fix --cwd ./app
 pkg-audit-fix --prod
 pkg-audit-fix --dev --audit-level high
+pkg-audit-fix --dry-run
 pkg-audit-fix --json
 ```
 
-## Why Use It
+## Supported Package Managers
 
-Package manager audit commands are inconsistent. `pkg-audit-fix` gives you a single workflow for:
-
-- `pnpm`
-- `npm`
-- `yarn`
-- `bun`
-
-Instead of remembering different audit and fix commands for each tool, you run one command and get a clear summary back.
-
-## Package Manager Support
-
-- `pnpm`: audits, fixes, reinstalls, and can help recover from `minimumReleaseAge` blocks
-- `npm`: audits and runs `npm audit fix`
-- `yarn` Classic: audits and reports vulnerabilities
-- `yarn` Berry: audits, rechecks, and can run `yarn dedupe`
-- `bun`: audits, prompts for manual remediation because Bun does not support `audit --fix`, then re-audits and reports what remains
+- `pnpm`: audit, fix, reinstall, and optional help for `minimumReleaseAge` exclusions
+- `npm`: audit and `npm audit fix`
+- `yarn` Classic: audit and report
+- `yarn` Berry: audit, recheck, and optional `yarn dedupe`
+- `bun`: audit, prompt for manual remediation, then re-audit and summarize
 
 ## Useful Flags
 
@@ -79,7 +48,26 @@ Instead of remembering different audit and fix commands for each tool, you run o
 - `--prod`: audit production dependencies only
 - `--dev`: audit development dependencies only
 - `--audit-level <low|moderate|high|critical>`: set the minimum advisory level
+- `--dedupe <auto|always|never>`: run a dedupe pass when supported
 - `--dry-run`: audit without applying fixes
 - `--json`: print a machine-readable summary
 - `--show-commands`: print the underlying package-manager commands
 - `--verbose`: stream subprocess output
+
+## Programmatic API
+
+```ts
+import { formatTextSummary, runAuditFix } from "pkg-audit-fix";
+
+const result = await runAuditFix({
+  cwd: process.cwd()
+});
+
+console.log(formatTextSummary(result));
+```
+
+Use `toJsonSummary(result)` if you want a machine-readable payload instead of the text reporter.
+
+[npm-image]: https://img.shields.io/npm/v/pkg-audit-fix
+[npm-url]: https://www.npmjs.com/package/pkg-audit-fix
+[npm-dl-stats]: https://img.shields.io/npm/dm/pkg-audit-fix
