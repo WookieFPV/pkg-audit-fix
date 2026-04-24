@@ -1,5 +1,12 @@
 # pkg-audit-fix
 
+## 0.2.1
+
+### Patch Changes
+
+- 44b7fbe: Improve bun support (experimal)
+- 44b7fbe: Improve docs (readme.md)
+
 ## 0.2.0
 
 ### Minor Changes
