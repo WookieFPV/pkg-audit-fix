@@ -1,6 +1,6 @@
 {
   "name": "pkg-audit-fix",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Audit dependencies and run native fix flows across pnpm, npm, yarn, and bun.",
   "type": "module",
   "bin": {
