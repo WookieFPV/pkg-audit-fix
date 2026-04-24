@@ -1,29 +1,29 @@
 # pkg-audit-fix [![npm][npm-image]][npm-url] ![npm][npm-dl-stats]
 
-Audit dependencies and run the native fix flow across `pnpm`, `npm`, `yarn`, and `bun`.
+One command to audit dependencies and run the native fix flow for `pnpm`, `npm`, `yarn`, and `bun`.
 
-`pkg-audit-fix` gives you one command that detects the current package manager, runs the best available audit and remediation flow for it, and prints a clean summary of what changed and what still needs attention.
+It detects your package manager, applies the best available remediation flow, then summarizes what changed and what still needs attention.
 
 ## Requirements
 
 - Node.js `>=20.19`
 
-## CLI Usage
+## Usage
 
-Run it without installing:
+Run in your project:
 
 ```bash
 npx pkg-audit-fix@latest
 ```
 
-Or install it globally:
+Or install globally:
 
 ```bash
 npm install --global pkg-audit-fix
 pkg-audit-fix
 ```
 
-## Common Commands
+## Examples
 
 ```bash
 pkg-audit-fix
@@ -34,25 +34,25 @@ pkg-audit-fix --dry-run
 pkg-audit-fix --json
 ```
 
-## Supported Package Managers
+## Options
 
-- `pnpm`: audit, fix, reinstall, and optional help for `minimumReleaseAge` exclusions
-- `npm`: audit and `npm audit fix`
-- `yarn` Classic: audit and report
-- `yarn` Berry: audit, recheck, and optional `yarn dedupe`
-- `bun`: audit, prompt for manual remediation, then re-audit and summarize
-
-## Useful Flags
-
-- `--manager <auto|pnpm|npm|yarn|bun>`: override package manager detection
+- `--manager <auto|pnpm|npm|yarn|bun>`: override detection
 - `--prod`: audit production dependencies only
 - `--dev`: audit development dependencies only
-- `--audit-level <low|moderate|high|critical>`: set the minimum advisory level
-- `--dedupe <auto|always|never>`: run a dedupe pass when supported
+- `--audit-level <low|moderate|high|critical>`: set the minimum severity
+- `--dedupe <auto|always|never>`: run dedupe when supported
 - `--dry-run`: audit without applying fixes
-- `--json`: print a machine-readable summary
-- `--show-commands`: print the underlying package-manager commands
-- `--verbose`: stream subprocess output
+- `--json`: output a machine-readable summary
+- `--show-commands`: print package-manager commands
+- `--verbose`: stream command output
+
+## Package Managers
+
+- `pnpm`: audit, fix, reinstall, and `minimumReleaseAge` handling
+- `npm`: audit and `npm audit fix`
+- `yarn` Classic: audit and report
+- `yarn` Berry: audit, recheck, and optional dedupe
+- `bun`: audit, manual remediation prompt, and re-audit
 
 ## Programmatic API
 
@@ -66,7 +66,7 @@ const result = await runAuditFix({
 console.log(formatTextSummary(result));
 ```
 
-Use `toJsonSummary(result)` if you want a machine-readable payload instead of the text reporter.
+Use `toJsonSummary(result)` for machine-readable output.
 
 [npm-image]: https://img.shields.io/npm/v/pkg-audit-fix
 [npm-url]: https://www.npmjs.com/package/pkg-audit-fix
