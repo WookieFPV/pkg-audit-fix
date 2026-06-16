@@ -9,6 +9,7 @@ import {
   CommandExecutionError,
   type MinimumReleaseAgeDeclinedError,
 } from "../src/core/types.js";
+import { formatTextSummary } from "../src/reporters/text.js";
 import { readFixture } from "./helpers.js";
 
 describe("runAuditFix", () => {
@@ -99,6 +100,8 @@ describe("runAuditFix", () => {
     expect(steps).toEqual([
       "Initial audit",
       "Read pnpm minimumReleaseAgeExclude",
+      "Read pnpm audit ignoreGhsas",
+      "Read pnpm audit ignoreCves",
       "Apply fixes",
       "Reinstall dependencies",
       "Final audit",
@@ -115,6 +118,237 @@ describe("runAuditFix", () => {
         remainingCount: 0,
       },
     ]);
+  });
+
+  it("counts only resolved audit entries when pnpm metadata includes ignored advisories", async () => {
+    const beforeWithIgnoredMetadata = JSON.stringify({
+      advisories: {
+        "1001": {
+          module_name: "postcss",
+          severity: "moderate",
+          title: "PostCSS line return parsing error",
+          url: "https://github.com/advisories/GHSA-QX2V-QP2M-JG93",
+          github_advisory_id: "GHSA-QX2V-QP2M-JG93",
+          cves: ["CVE-2026-41305"],
+          findings: [{ version: "8.4.49" }],
+        },
+      },
+      metadata: {
+        vulnerabilities: {
+          low: 0,
+          moderate: 3,
+          high: 0,
+          critical: 0,
+          total: 3,
+        },
+      },
+    });
+    const after = JSON.stringify({
+      advisories: {},
+      metadata: {
+        vulnerabilities: {
+          low: 0,
+          moderate: 0,
+          high: 0,
+          critical: 0,
+          total: 0,
+        },
+      },
+    });
+    const stdoutByStep: Record<string, string> = {
+      "Initial audit": beforeWithIgnoredMetadata,
+      "Read pnpm audit ignoreGhsas": JSON.stringify([
+        "GHSA-fvcv-3m26-pcqx",
+        "GHSA-3p68-rc4w-qgx5",
+      ]),
+      "Read pnpm audit ignoreCves": JSON.stringify(["CVE-2026-41305"]),
+      "Apply fixes": beforeWithIgnoredMetadata,
+      "Reinstall dependencies": "",
+      "Final audit": after,
+    };
+    const exec = vi.fn(async (step) => ({
+      command: step.command,
+      args: step.args,
+      stdout: stdoutByStep[step.label] ?? "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+    }));
+
+    const result = await runAuditFix(
+      {
+        cwd: "/tmp/project",
+        manager: "pnpm",
+        scope: "prod",
+        threshold: "moderate",
+        dedupe: "never",
+        dryRun: false,
+        verbose: false,
+      },
+      {
+        detectManager: async () => ({
+          manager: "pnpm",
+          agent: "pnpm",
+          source: "override",
+        }),
+        exec,
+      },
+    );
+
+    expect(result.initial.total).toBe(3);
+    expect(exec).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "Apply fixes",
+        args: expect.arrayContaining([
+          "--ignore",
+          "GHSA-3P68-RC4W-QGX5",
+          "--ignore",
+          "GHSA-FVCV-3M26-PCQX",
+          "--ignore",
+          "CVE-2026-41305",
+        ]),
+      }),
+      expect.anything(),
+    );
+    expect(result.fixedCount).toBe(1);
+    expect(formatTextSummary(result)).toContain("Resolved 1 vulnerability.");
+    expect(result.fixed).toEqual([
+      {
+        packageName: "postcss",
+        installedVersions: ["8.4.49"],
+        advisoryIds: ["CVE-2026-41305", "GHSA-QX2V-QP2M-JG93"],
+        title: "PostCSS line return parsing error",
+        url: "https://github.com/advisories/GHSA-QX2V-QP2M-JG93",
+      },
+    ]);
+    expect(result.stepFixes).toEqual([
+      {
+        label: "Apply fixes",
+        fixedCount: 1,
+        remainingCount: 0,
+      },
+    ]);
+  });
+
+  it("removes pnpm audit-fix overrides for packages absent from actionable audit entries", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pkg-audit-fix-"));
+    const before = JSON.stringify({
+      advisories: {
+        "1001": {
+          module_name: "postcss",
+          severity: "moderate",
+          title: "PostCSS line return parsing error",
+          url: "https://github.com/advisories/GHSA-QX2V-QP2M-JG93",
+          github_advisory_id: "GHSA-QX2V-QP2M-JG93",
+          cves: ["CVE-2026-41305"],
+          findings: [{ version: "8.4.49" }],
+        },
+      },
+      metadata: {
+        vulnerabilities: {
+          low: 0,
+          moderate: 3,
+          high: 0,
+          critical: 0,
+          total: 3,
+        },
+      },
+    });
+    const after = JSON.stringify({
+      advisories: {},
+      metadata: {
+        vulnerabilities: {
+          low: 0,
+          moderate: 0,
+          high: 0,
+          critical: 0,
+          total: 0,
+        },
+      },
+    });
+    const packageJsonPath = path.join(cwd, "package.json");
+    const exec = vi.fn(async (step) => {
+      if (step.label === "Apply fixes") {
+        const packageJson = JSON.parse(
+          fs.readFileSync(packageJsonPath, "utf8"),
+        );
+        packageJson.pnpm.overrides = {
+          ...packageJson.pnpm.overrides,
+          "axios@>=1.0.0 <1.15.0": ">=1.15.0",
+          "postcss@<8.5.10": ">=8.5.10",
+        };
+        fs.writeFileSync(
+          packageJsonPath,
+          `${JSON.stringify(packageJson, null, 2)}\n`,
+          "utf8",
+        );
+      }
+
+      return {
+        command: step.command,
+        args: step.args,
+        stdout:
+          step.label === "Initial audit"
+            ? before
+            : step.label === "Read pnpm audit ignoreGhsas"
+              ? JSON.stringify(["GHSA-fvcv-3m26-pcqx", "GHSA-3p68-rc4w-qgx5"])
+              : step.label === "Read pnpm audit ignoreCves"
+                ? JSON.stringify(["CVE-2026-41305"])
+                : step.label === "Final audit"
+                  ? after
+                  : "",
+        stderr: "",
+        exitCode: 0,
+        signal: null,
+      };
+    });
+
+    fs.writeFileSync(
+      packageJsonPath,
+      JSON.stringify(
+        {
+          name: "fixture",
+          pnpm: {
+            overrides: {
+              zod: "4.3.6",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    try {
+      await runAuditFix(
+        {
+          cwd,
+          manager: "pnpm",
+          scope: "prod",
+          threshold: "moderate",
+          dedupe: "never",
+          dryRun: false,
+          verbose: false,
+        },
+        {
+          detectManager: async () => ({
+            manager: "pnpm",
+            agent: "pnpm",
+            source: "override",
+          }),
+          exec,
+        },
+      );
+
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+      expect(packageJson.pnpm.overrides).toEqual({
+        zod: "4.3.6",
+        "postcss@<8.5.10": ">=8.5.10",
+      });
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("retries pnpm install after adding too-new packages to minimumReleaseAgeExclude", async () => {
@@ -146,6 +380,20 @@ describe("runAuditFix", () => {
           command: step.command,
           args: step.args,
           stdout: readFixture("pnpm", "before.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (
+        step.label === "Read pnpm audit ignoreGhsas" ||
+        step.label === "Read pnpm audit ignoreCves"
+      ) {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "[]",
           stderr: "",
           exitCode: 0,
           signal: null,
@@ -326,6 +574,8 @@ describe("runAuditFix", () => {
       "Read pnpm minimumReleaseAge",
       "Read pnpm package publish times",
       "Clean pnpm minimumReleaseAgeExclude: removed 1 unneeded entry",
+      "Read pnpm audit ignoreGhsas",
+      "Read pnpm audit ignoreCves",
       "Apply fixes",
       "Reinstall dependencies",
       "Read pnpm minimumReleaseAgeExclude",
@@ -509,6 +759,20 @@ describe("runAuditFix", () => {
           command: step.command,
           args: step.args,
           stdout: readFixture("pnpm", "before.json"),
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+        };
+      }
+
+      if (
+        step.label === "Read pnpm audit ignoreGhsas" ||
+        step.label === "Read pnpm audit ignoreCves"
+      ) {
+        return {
+          command: step.command,
+          args: step.args,
+          stdout: "[]",
           stderr: "",
           exitCode: 0,
           signal: null,
@@ -730,6 +994,8 @@ describe("runAuditFix", () => {
     expect(steps).toEqual([
       "Initial audit",
       "Read pnpm minimumReleaseAgeExclude",
+      "Read pnpm audit ignoreGhsas",
+      "Read pnpm audit ignoreCves",
       "Apply fixes",
       "Reinstall dependencies",
       "Recheck after fixes",

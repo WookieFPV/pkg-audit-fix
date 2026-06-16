@@ -9,6 +9,7 @@ import {
 import { getAdapter } from "../adapters/index.js";
 import {
   extractPnpmMinimumReleaseAgeExclusions,
+  parsePnpmAuditIgnoreListConfig,
   parsePnpmMinimumReleaseAgeConfig,
   parsePnpmMinimumReleaseAgeExcludeConfig,
   parsePnpmPackagePublishedTimes,
@@ -20,7 +21,12 @@ import {
 } from "../adapters/yarn-berry.js";
 import { detectPackageManager } from "./detect-manager.js";
 import { type ExecFunction, executeStep } from "./exec.js";
-import { diffFixedEntries, groupFixedPackages } from "./normalize.js";
+import {
+  diffFixedEntries,
+  groupFixedPackages,
+  isRecord,
+  uniqueSorted,
+} from "./normalize.js";
 import type {
   CommandResult,
   CommandStep,
@@ -154,6 +160,42 @@ function createPnpmMinimumReleaseAgeExcludeUpdateLabel(input: {
   return details.length > 0 ? `${prefix}: ${details.join(", ")}` : prefix;
 }
 
+function parsePnpmOverridePackageName(selector: string): string {
+  const dependencySelector = selector.split(">").at(-1)?.trim() ?? selector;
+  const versionSeparatorIndex = dependencySelector.startsWith("@")
+    ? dependencySelector.indexOf("@", 1)
+    : dependencySelector.indexOf("@");
+
+  if (versionSeparatorIndex <= 0) {
+    return dependencySelector;
+  }
+
+  return dependencySelector.slice(0, versionSeparatorIndex);
+}
+
+function readPackageJson(pathname: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(pathname, "utf8")) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+function readPnpmOverrides(
+  packageJson: Record<string, unknown> | null,
+): Record<string, unknown> {
+  if (!packageJson || !isRecord(packageJson.pnpm)) {
+    return {};
+  }
+
+  return isRecord(packageJson.pnpm.overrides) ? packageJson.pnpm.overrides : {};
+}
+
 export async function runAuditFix(
   options: RunAuditFixOptions,
   dependencies: {
@@ -196,9 +238,11 @@ export async function runAuditFix(
     before: NormalizedAuditSnapshot,
     after: NormalizedAuditSnapshot,
   ) => {
+    const fixedEntries = diffFixedEntries(before.entries, after.entries);
+
     stepFixes.push({
       label,
-      fixedCount: Math.max(before.total - after.total, 0),
+      fixedCount: fixedEntries.length,
       remainingCount: after.total,
     });
   };
@@ -397,6 +441,71 @@ export async function runAuditFix(
     );
 
     return parsePnpmMinimumReleaseAgeConfig(result.stdout);
+  };
+
+  const readPnpmAuditIgnoreList = async (
+    setting: "ignoreCves" | "ignoreGhsas",
+  ): Promise<string[]> => {
+    const result = await runStep(
+      withLabel(`Read pnpm audit ${setting}`, "pnpm", [
+        "config",
+        "get",
+        "--json",
+        `auditConfig.${setting}`,
+      ]),
+      undefined,
+      { silent: true },
+    );
+
+    return parsePnpmAuditIgnoreListConfig(result.stdout);
+  };
+
+  const readPnpmAuditIgnores = async (): Promise<string[]> => {
+    return uniqueSorted([
+      ...(await readPnpmAuditIgnoreList("ignoreGhsas")),
+      ...(await readPnpmAuditIgnoreList("ignoreCves")),
+    ]);
+  };
+
+  const cleanIgnoredPnpmAuditFixOverrides = async (input: {
+    beforeOverrides: Record<string, unknown>;
+    allowedPackageNames: Set<string>;
+  }): Promise<number> => {
+    if (detection.manager !== "pnpm") {
+      return 0;
+    }
+
+    const packageJsonPath = path.join(options.cwd, "package.json");
+    const packageJson = readPackageJson(packageJsonPath);
+
+    if (!packageJson || !isRecord(packageJson.pnpm)) {
+      return 0;
+    }
+
+    const overrides = readPnpmOverrides(packageJson);
+    const addedOverrideKeys = Object.keys(overrides).filter(
+      (key) => !(key in input.beforeOverrides),
+    );
+    const ignoredOverrideKeys = addedOverrideKeys.filter(
+      (key) =>
+        !input.allowedPackageNames.has(parsePnpmOverridePackageName(key)),
+    );
+
+    if (ignoredOverrideKeys.length === 0) {
+      return 0;
+    }
+
+    for (const key of ignoredOverrideKeys) {
+      delete overrides[key];
+    }
+
+    fs.writeFileSync(
+      packageJsonPath,
+      `${JSON.stringify(packageJson, null, 2)}\n`,
+      "utf8",
+    );
+
+    return ignoredOverrideKeys.length;
   };
 
   const readPnpmMinimumReleaseAgeExclude = async (): Promise<string[]> => {
@@ -783,6 +892,21 @@ export async function runAuditFix(
     const remediation = adapter.buildRemediationProcess(context);
 
     if (remediation) {
+      const pnpmOverridesBeforeFix =
+        detection.manager === "pnpm"
+          ? readPnpmOverrides(
+              readPackageJson(path.join(options.cwd, "package.json")),
+            )
+          : {};
+
+      if (detection.manager === "pnpm") {
+        const ignoredAdvisories = await readPnpmAuditIgnores();
+
+        for (const ignoredAdvisory of ignoredAdvisories) {
+          remediation.args.push("--ignore", ignoredAdvisory);
+        }
+      }
+
       remediationRan = true;
       const remediationStep = withLabel(
         "Apply fixes",
@@ -793,6 +917,13 @@ export async function runAuditFix(
       await runStep(remediationStep, (error) =>
         recoverMinimumReleaseAgeFailure(error, remediationStep),
       );
+
+      await cleanIgnoredPnpmAuditFixOverrides({
+        beforeOverrides: pnpmOverridesBeforeFix,
+        allowedPackageNames: new Set(
+          initial.entries.map((entry) => entry.packageName),
+        ),
+      });
     }
 
     const postRemediation = adapter.buildPostRemediationProcess(context);
@@ -898,7 +1029,7 @@ export async function runAuditFix(
   }
   const fixedEntries = diffFixedEntries(initial.entries, final.entries);
   const fixed = groupFixedPackages(fixedEntries);
-  const fixedCount = Math.max(initial.total - final.total, 0);
+  const fixedCount = fixedEntries.length;
   const remainingCount = final.total;
 
   return {

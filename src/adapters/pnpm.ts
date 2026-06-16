@@ -217,6 +217,26 @@ export function parsePnpmMinimumReleaseAgeConfig(
   return null;
 }
 
+export function parsePnpmAuditIgnoreListConfig(stdout: string): string[] {
+  const trimmed = stdout.trim();
+
+  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
+    return [];
+  }
+
+  const parsed = JSON.parse(trimmed) as unknown;
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return uniqueSorted(
+    parsed
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.toUpperCase()),
+  );
+}
+
 export function parsePnpmPackagePublishedTimes(
   stdout: string,
 ): Record<string, string> {

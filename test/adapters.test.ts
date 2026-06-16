@@ -9,6 +9,7 @@ import {
 import { npmAdapter } from "../src/adapters/npm.js";
 import {
   extractPnpmMinimumReleaseAgeExclusions,
+  parsePnpmAuditIgnoreListConfig,
   parsePnpmMinimumReleaseAgeConfig,
   parsePnpmMinimumReleaseAgeExcludeConfig,
   parsePnpmPackagePublishedTimes,
@@ -189,6 +190,19 @@ describe("adapter commands", () => {
       command: "yarn",
       args: ["dedupe"],
     });
+  });
+});
+
+describe("pnpm config parsing", () => {
+  it("parses auditConfig ignore lists case-insensitively", () => {
+    expect(
+      parsePnpmAuditIgnoreListConfig(
+        '["GHSA-fvcv-3m26-pcqx","GHSA-3p68-rc4w-qgx5"]',
+      ),
+    ).toEqual(["GHSA-3P68-RC4W-QGX5", "GHSA-FVCV-3M26-PCQX"]);
+    expect(parsePnpmAuditIgnoreListConfig('["CVE-2026-41305"]')).toEqual([
+      "CVE-2026-41305",
+    ]);
   });
 });
 
