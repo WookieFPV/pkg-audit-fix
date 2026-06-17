@@ -42,7 +42,14 @@ describe("adapter commands", () => {
       pnpmAdapter.buildRemediationProcess({ threshold: "high", scope: "dev" }),
     ).toEqual({
       command: "pnpm",
-      args: ["audit", "--json", "--fix", "--audit-level=high", "--dev"],
+      args: [
+        "audit",
+        "--json",
+        "--fix",
+        "override",
+        "--audit-level=high",
+        "--dev",
+      ],
     });
     expect(
       pnpmAdapter.buildDedupeProcess({ threshold: "moderate", scope: "prod" }),

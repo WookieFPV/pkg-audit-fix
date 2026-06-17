@@ -284,6 +284,7 @@ export const pnpmAdapter: PackageManagerAdapter = {
       "audit",
       "--json",
       "--fix",
+      "override",
       `--audit-level=${context.threshold}`,
     ];
 
