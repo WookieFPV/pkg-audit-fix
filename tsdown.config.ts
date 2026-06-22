@@ -8,7 +8,11 @@ export default defineConfig({
   format: ["esm"],
   platform: "node",
   dts: true,
-  sourcemap: true,
+  sourcemap: false,
+  minify: true,
+  deps: {
+    skipNodeModulesBundle: true,
+  },
   clean: true,
   attw: {
     profile: "esm-only",
