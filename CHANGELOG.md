@@ -1,5 +1,15 @@
 # pkg-audit-fix
 
+## 0.3.0
+
+### Minor Changes
+
+- b7198ca: support pnpm v11
+
+### Patch Changes
+
+- d4b240b: reduced package size (245 kB -> 45 kB)
+
 ## 0.2.1
 
 ### Patch Changes
