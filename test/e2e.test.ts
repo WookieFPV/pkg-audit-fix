@@ -10,6 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 
+import type { TestContext } from "vitest";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import type { JsonSummary, PackageManager } from "../src/index.js";
@@ -52,6 +53,8 @@ interface ManagerCase {
   id: "npm" | "pnpm" | "bun" | "yarn-berry";
   manager: PackageManager;
   command: string;
+  /** Executables that must be on PATH for this case to run. */
+  requiredCommands: readonly string[];
   installArgs: string[];
   auditArgs: string[];
   setupProject?: ((projectDir: string) => Promise<void>) | undefined;
@@ -79,6 +82,7 @@ const managerCases: readonly ManagerCase[] = [
     id: "npm",
     manager: "npm",
     command: "npm",
+    requiredCommands: ["npm"],
     installArgs: [
       "install",
       `${FIXTURE_PACKAGE.name}@${FIXTURE_PACKAGE.vulnerableVersion}`,
@@ -90,6 +94,7 @@ const managerCases: readonly ManagerCase[] = [
     id: "pnpm",
     manager: "pnpm",
     command: "pnpm",
+    requiredCommands: ["pnpm"],
     installArgs: [
       "add",
       `${FIXTURE_PACKAGE.name}@${FIXTURE_PACKAGE.vulnerableVersion}`,
@@ -101,6 +106,7 @@ const managerCases: readonly ManagerCase[] = [
     id: "bun",
     manager: "bun",
     command: "bun",
+    requiredCommands: ["bun"],
     installArgs: [
       "add",
       `${FIXTURE_PACKAGE.name}@${FIXTURE_PACKAGE.vulnerableVersion}`,
@@ -112,6 +118,9 @@ const managerCases: readonly ManagerCase[] = [
     id: "yarn-berry",
     manager: "yarn",
     command: "yarn",
+    // The project-local `yarn` shim below runs Berry through corepack, so
+    // corepack is the binary that actually has to exist.
+    requiredCommands: ["corepack"],
     installArgs: [
       "add",
       `${FIXTURE_PACKAGE.name}@${FIXTURE_PACKAGE.vulnerableVersion}`,
@@ -153,20 +162,49 @@ afterEach(async () => {
   );
 });
 
-function isManagerAvailable(command: PackageManager): boolean {
-  const result = spawnSync(command, ["--version"], {
-    stdio: "ignore",
-  });
-
-  return result.status === 0;
-}
-
 function isCommandAvailable(command: string): boolean {
   return (
     spawnSync(command, command === "expect" ? ["-v"] : ["--version"], {
       stdio: "ignore",
     }).status === 0
   );
+}
+
+/**
+ * E2E cases drive real package managers, which are not always installed on a
+ * developer machine. A missing tool skips the affected case locally but fails
+ * in CI, where the workflow installs the whole toolchain.
+ */
+function requireCommands(
+  context: TestContext,
+  commands: readonly string[],
+): void {
+  const missing = commands.filter((command) => !isCommandAvailable(command));
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  const reason = `requires ${missing.join(", ")} on PATH`;
+
+  if (process.env.CI) {
+    throw new Error(`This E2E test ${reason}, but CI did not install it.`);
+  }
+
+  context.skip(reason);
+}
+
+/**
+ * Skips a case that needs a tool no environment is expected to provide, such
+ * as the pty helper used to answer interactive prompts.
+ */
+function requireOptionalCommand(
+  context: TestContext,
+  command: string | null,
+): void {
+  if (command === null || !isCommandAvailable(command)) {
+    context.skip(`requires ${command ?? "expect"} on PATH`);
+  }
 }
 
 function resolvePtyCommand(): string | null {
@@ -728,12 +766,10 @@ function getManagerCase(id: ManagerCase["id"]): ManagerCase {
 }
 
 async function expectRealVulnerabilityRemediation(
+  context: TestContext,
   managerCase: ManagerCase,
 ): Promise<void> {
-  expect(
-    isManagerAvailable(managerCase.manager),
-    `${managerCase.manager} must be installed to run the E2E suite`,
-  ).toBe(true);
+  requireCommands(context, managerCase.requiredCommands);
 
   const { projectDir, envOverrides } = await createProject(managerCase.manager);
   await managerCase.setupProject?.(projectDir);
@@ -774,16 +810,11 @@ async function expectRealVulnerabilityRemediation(
 }
 
 async function expectMinimumAgeRecovery(
+  context: TestContext,
   managerCase: ManagerCase,
 ): Promise<void> {
-  expect(
-    isCommandAvailable(managerCase.command),
-    `${managerCase.command} must be installed to run the E2E suite`,
-  ).toBe(true);
-  expect(
-    ptyCommand && isCommandAvailable(ptyCommand),
-    `${ptyCommand ?? "script"} must be installed to run interactive minimum-age E2E tests`,
-  ).toBe(true);
+  requireCommands(context, managerCase.requiredCommands);
+  requireOptionalCommand(context, ptyCommand);
 
   const recentPackage = await resolveRecentPackage(
     MINIMUM_AGE_RECENT_PACKAGE_CANDIDATES[managerCase.id],
@@ -846,10 +877,6 @@ describe.sequential("CLI vulnerability remediation", () => {
       spawnSync(nodeCommand, ["--version"], { stdio: "ignore" }).status,
       `${nodeCommand} must be installed to run the built CLI in E2E tests`,
     ).toBe(0);
-    expect(
-      spawnSync("corepack", ["--version"], { stdio: "ignore" }).status,
-      "corepack must be installed to run the Yarn Berry E2E tests",
-    ).toBe(0);
 
     await runCommand({
       command: buildRunner,
@@ -861,35 +888,38 @@ describe.sequential("CLI vulnerability remediation", () => {
 
   it("fixes a real npm vulnerability in a temp project", {
     timeout: E2E_TIMEOUT_MS,
-  }, async () => {
-    await expectRealVulnerabilityRemediation(getManagerCase("npm"));
+  }, async (context) => {
+    await expectRealVulnerabilityRemediation(context, getManagerCase("npm"));
   });
 
   it("fixes a real pnpm vulnerability in a temp project", {
     timeout: E2E_TIMEOUT_MS,
-  }, async () => {
-    await expectRealVulnerabilityRemediation(getManagerCase("pnpm"));
+  }, async (context) => {
+    await expectRealVulnerabilityRemediation(context, getManagerCase("pnpm"));
   });
 
   // Bun remediation is intentionally manual, so it is covered in unit tests
   // rather than the non-interactive E2E flow.
   it("fixes a real yarn vulnerability in a temp project", {
     timeout: E2E_TIMEOUT_MS,
-  }, async () => {
-    await expectRealVulnerabilityRemediation(getManagerCase("yarn-berry"));
+  }, async (context) => {
+    await expectRealVulnerabilityRemediation(
+      context,
+      getManagerCase("yarn-berry"),
+    );
   });
 
-  if (ptyCommand) {
-    it("recovers pnpm minimum age gating during remediation", {
-      timeout: E2E_TIMEOUT_MS,
-    }, async () => {
-      await expectMinimumAgeRecovery(getManagerCase("pnpm"));
-    });
+  // These drive the interactive confirmation prompt, so they need a pty helper
+  // in addition to the package manager itself.
+  it("recovers pnpm minimum age gating during remediation", {
+    timeout: E2E_TIMEOUT_MS,
+  }, async (context) => {
+    await expectMinimumAgeRecovery(context, getManagerCase("pnpm"));
+  });
 
-    it("recovers yarn-berry minimum age gating during remediation", {
-      timeout: E2E_TIMEOUT_MS,
-    }, async () => {
-      await expectMinimumAgeRecovery(getManagerCase("yarn-berry"));
-    });
-  }
+  it("recovers yarn-berry minimum age gating during remediation", {
+    timeout: E2E_TIMEOUT_MS,
+  }, async (context) => {
+    await expectMinimumAgeRecovery(context, getManagerCase("yarn-berry"));
+  });
 });

@@ -9,6 +9,8 @@ import type {
   VulnerabilityCounts,
 } from "./types.js";
 
+const SEVERITIES = ["low", "moderate", "high", "critical"] as const;
+
 const SEVERITY_ORDER: Record<Severity, number> = {
   low: 0,
   moderate: 1,
@@ -45,19 +47,9 @@ export function uniqueSorted(values: Iterable<string>): string[] {
 }
 
 export function normalizeSeverity(value: unknown): Severity {
-  if (typeof value === "string") {
-    const normalized = value.toLowerCase();
-    if (
-      normalized === "low" ||
-      normalized === "moderate" ||
-      normalized === "high" ||
-      normalized === "critical"
-    ) {
-      return normalized;
-    }
-  }
+  const normalized = typeof value === "string" ? value.toLowerCase() : "";
 
-  return "moderate";
+  return SEVERITIES.find((severity) => severity === normalized) ?? "moderate";
 }
 
 export function severityAtOrAbove(
@@ -110,32 +102,18 @@ export function createSnapshot(input: {
     severityAtOrAbove(entry.severity, input.threshold),
   );
   const derivedCounts = countsFromEntries(filteredEntries);
-  const counts = input.counts
-    ? {
-        low: Math.max(
-          severityAtOrAbove("low", input.threshold) ? input.counts.low : 0,
-          derivedCounts.low,
-        ),
-        moderate: Math.max(
-          severityAtOrAbove("moderate", input.threshold)
-            ? input.counts.moderate
-            : 0,
-          derivedCounts.moderate,
-        ),
-        high: Math.max(
-          severityAtOrAbove("high", input.threshold) ? input.counts.high : 0,
-          derivedCounts.high,
-        ),
-        critical: Math.max(
-          severityAtOrAbove("critical", input.threshold)
-            ? input.counts.critical
-            : 0,
-          derivedCounts.critical,
-        ),
-        total: 0,
-      }
-    : derivedCounts;
-  counts.total = counts.low + counts.moderate + counts.high + counts.critical;
+  const reportedCounts = input.counts;
+  const counts = emptyCounts();
+
+  for (const severity of SEVERITIES) {
+    // Trust the manager's own tally when it exceeds the entries we could
+    // normalize, but never count severities below the requested threshold.
+    counts[severity] =
+      reportedCounts && severityAtOrAbove(severity, input.threshold)
+        ? Math.max(reportedCounts[severity], derivedCounts[severity])
+        : derivedCounts[severity];
+    counts.total += counts[severity];
+  }
 
   return {
     manager: input.manager,
@@ -203,19 +181,19 @@ export function collectAdvisoryIds(...sources: unknown[]): string[] {
     }
 
     const push = (value: unknown) => {
-      if (
-        typeof value === "string" &&
-        /^(CVE-\d{4}-\d+|GHSA-[\w-]+)$/i.test(value)
-      ) {
+      if (typeof value !== "string") {
+        return;
+      }
+
+      if (/^(CVE-\d{4}-\d+|GHSA-[\w-]+)$/i.test(value)) {
         advisoryIds.add(value.toUpperCase());
         return;
       }
 
-      if (typeof value === "string") {
-        const match = /\/advisories\/(GHSA-[\w-]+)/i.exec(value);
-        if (match) {
-          advisoryIds.add(match[1].toUpperCase());
-        }
+      const match = /\/advisories\/(GHSA-[\w-]+)/i.exec(value);
+
+      if (match) {
+        advisoryIds.add(match[1].toUpperCase());
       }
     };
 

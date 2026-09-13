@@ -5,17 +5,17 @@ import {
   normalizeSeverity,
   parseJsonLines,
   parseJsonObject,
-  uniqueSorted,
-  vulnerabilityKey,
 } from "../core/normalize.js";
 import type { NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
-
-export interface YarnMinimumReleaseAgeExclusion {
-  packageName: string;
-  version: string;
-  specifier: string;
-}
+import {
+  appendConfigBlock,
+  createExclusionCollector,
+  type MinimumReleaseAgeExclusion,
+  readOptionalString,
+  toInstalledVersions,
+  vulnerabilityEntries,
+} from "./shared.js";
 
 function isBerryAuditOutput(stdout: string): boolean {
   if (parseBerryAuditOutput(stdout)) {
@@ -50,36 +50,18 @@ function collectBerryNdjsonEntries(stdout: string): NormalizedVulnerability[] {
       continue;
     }
 
-    const packageName = event.value;
     const advisory = event.children;
-    const severity = normalizeSeverity(advisory.Severity);
-    const advisoryIds = collectAdvisoryIds(advisory, {
-      ghsaId: advisory.URL,
-    });
-    const title =
-      typeof advisory.Issue === "string" ? advisory.Issue : undefined;
-    const url = typeof advisory.URL === "string" ? advisory.URL : undefined;
-    const versions = uniqueSorted(
-      Array.isArray(advisory["Tree Versions"])
-        ? advisory["Tree Versions"].filter(
-            (version): version is string => typeof version === "string",
-          )
-        : [],
-    );
 
-    for (const installedVersion of versions.length > 0
-      ? versions
-      : ["unknown"]) {
-      entries.push({
-        key: vulnerabilityKey(packageName, installedVersion, advisoryIds),
-        packageName,
-        installedVersion,
-        severity,
-        advisoryIds,
-        title,
-        url,
-      });
-    }
+    entries.push(
+      ...vulnerabilityEntries({
+        packageName: event.value,
+        severity: normalizeSeverity(advisory.Severity),
+        advisoryIds: collectAdvisoryIds(advisory, { ghsaId: advisory.URL }),
+        title: readOptionalString(advisory, "Issue"),
+        url: readOptionalString(advisory, "URL"),
+        versions: toInstalledVersions(advisory["Tree Versions"]),
+      }),
+    );
   }
 
   return entries;
@@ -136,23 +118,10 @@ function findRootYamlKeyRange(
 export function extractYarnMinimumReleaseAgeExclusions(result: {
   stdout: string;
   stderr: string;
-}): YarnMinimumReleaseAgeExclusion[] {
-  const seen = new Set<string>();
-  const exclusions: YarnMinimumReleaseAgeExclusion[] = [];
-  const pushExclusion = (packageName: string, version: string) => {
-    const specifier = `${packageName}@${version}`;
-
-    if (seen.has(specifier)) {
-      return;
-    }
-
-    seen.add(specifier);
-    exclusions.push({
-      packageName,
-      version,
-      specifier,
-    });
-  };
+}): MinimumReleaseAgeExclusion[] {
+  const collector = createExclusionCollector(
+    (packageName, version) => `${packageName}@${version}`,
+  );
 
   for (const source of [result.stdout, result.stderr]) {
     const matches = source.matchAll(
@@ -167,11 +136,11 @@ export function extractYarnMinimumReleaseAgeExclusions(result: {
         continue;
       }
 
-      pushExclusion(packageName, version);
+      collector.push(packageName, version);
     }
   }
 
-  return exclusions;
+  return collector.exclusions;
 }
 
 export function parseYarnNpmPreapprovedPackagesConfig(
@@ -224,14 +193,7 @@ export function updateYarnNpmPreapprovedPackagesConfig(
     return `${source.slice(0, existingKey.start)}${block}${source.slice(existingKey.end)}`;
   }
 
-  const prefix =
-    source.length === 0
-      ? ""
-      : source.endsWith("\n") || source.endsWith("\r")
-        ? ""
-        : newline;
-
-  return `${source}${prefix}${block}${newline}`;
+  return appendConfigBlock(source, block, newline);
 }
 
 export const yarnBerryAdapter: PackageManagerAdapter = {
@@ -239,26 +201,26 @@ export const yarnBerryAdapter: PackageManagerAdapter = {
   auditExitCodes: [0],
 
   buildAuditProcess(context) {
-    const args = [
-      "npm",
-      "audit",
-      "--json",
-      "--no-deprecations",
-      "--all",
-      "--recursive",
-      "--severity",
-      context.threshold,
-    ];
-
-    if (context.scope === "prod") {
-      args.push("--environment", "production");
-    } else if (context.scope === "dev") {
-      args.push("--environment", "development");
-    }
+    const environment =
+      context.scope === "prod"
+        ? ["--environment", "production"]
+        : context.scope === "dev"
+          ? ["--environment", "development"]
+          : [];
 
     return {
       command: "yarn",
-      args,
+      args: [
+        "npm",
+        "audit",
+        "--json",
+        "--no-deprecations",
+        "--all",
+        "--recursive",
+        "--severity",
+        context.threshold,
+        ...environment,
+      ],
     };
   },
 
@@ -304,32 +266,16 @@ export const yarnBerryAdapter: PackageManagerAdapter = {
           continue;
         }
 
-        const severity = normalizeSeverity(advisory.severity);
-        const advisoryIds = collectAdvisoryIds(advisory);
-        const title =
-          typeof advisory.title === "string" ? advisory.title : undefined;
-        const url = typeof advisory.url === "string" ? advisory.url : undefined;
-        const versions = uniqueSorted(
-          Array.isArray(advisory.versions)
-            ? advisory.versions.filter(
-                (version): version is string => typeof version === "string",
-              )
-            : [],
-        );
-
-        for (const installedVersion of versions.length > 0
-          ? versions
-          : ["unknown"]) {
-          entries.push({
-            key: vulnerabilityKey(packageName, installedVersion, advisoryIds),
+        entries.push(
+          ...vulnerabilityEntries({
             packageName,
-            installedVersion,
-            severity,
-            advisoryIds,
-            title,
-            url,
-          });
-        }
+            severity: normalizeSeverity(advisory.severity),
+            advisoryIds: collectAdvisoryIds(advisory),
+            title: readOptionalString(advisory, "title"),
+            url: readOptionalString(advisory, "url"),
+            versions: toInstalledVersions(advisory.versions),
+          }),
+        );
       }
     }
 

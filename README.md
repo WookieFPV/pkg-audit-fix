@@ -36,6 +36,7 @@ pkg-audit-fix --json
 
 ## Options
 
+- `--cwd <path>`: project directory, defaults to the current one
 - `--manager <auto|pnpm|npm|yarn|bun>`: override detection
 - `--prod`: audit production dependencies only
 - `--dev`: audit development dependencies only
@@ -45,6 +46,10 @@ pkg-audit-fix --json
 - `--json`: output a machine-readable summary
 - `--show-commands`: print package-manager commands
 - `--verbose`: stream command output
+- `-d, --debug`: print the detected package manager and echo commands
+- `--no-color`: disable ANSI output
+- `-v, --version`: print the package version
+- `-h, --help`: print usage
 
 ## Package Managers
 

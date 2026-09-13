@@ -11,6 +11,7 @@ import {
   type AuditLevel,
   type AuditScope,
   CliUsageError,
+  type ConfirmMinimumReleaseAgeExclusionsInput,
   type DedupeMode,
   ManagerDetectionError,
   type PackageManagerOverride,
@@ -30,7 +31,7 @@ Usage:
 
 Options:
   --cwd <path>                         Project directory, defaults to process.cwd()
-  --manager <auto|pnpm|npm|yarn|bun>  Override package manager detection
+  --manager <auto|pnpm|npm|yarn|bun>   Override package manager detection
   --prod                               Audit production dependencies only
   --dev                                Audit development dependencies only
   --audit-level <low|moderate|high|critical>
@@ -45,6 +46,27 @@ Options:
   -v, --version                        Print the package version
   -h, --help                           Print this help
 `;
+
+const MANAGER_OVERRIDES = [
+  "auto",
+  "pnpm",
+  "npm",
+  "yarn",
+  "bun",
+] as const satisfies readonly PackageManagerOverride[];
+
+const AUDIT_LEVELS = [
+  "low",
+  "moderate",
+  "high",
+  "critical",
+] as const satisfies readonly AuditLevel[];
+
+const DEDUPE_MODES = [
+  "auto",
+  "always",
+  "never",
+] as const satisfies readonly DedupeMode[];
 
 interface CliOptions {
   cwd: string;
@@ -81,50 +103,79 @@ function readPackageVersion(): string {
   return "0.0.0-unknown";
 }
 
-function expectValue(argv: string[], index: number, flag: string): string {
-  const value = argv[index + 1];
-
-  if (!value || value.startsWith("--")) {
-    throw new CliUsageError(`Missing value for ${flag}`);
+function parseEnum<T extends string>(
+  flag: string,
+  allowed: readonly T[],
+  value: string,
+): T {
+  if ((allowed as readonly string[]).includes(value)) {
+    return value as T;
   }
 
-  return value;
+  throw new CliUsageError(`Invalid ${flag} value: ${value}`);
 }
 
-function parseManager(value: string): PackageManagerOverride {
-  if (
-    value === "auto" ||
-    value === "pnpm" ||
-    value === "npm" ||
-    value === "yarn" ||
-    value === "bun"
-  ) {
-    return value;
-  }
+/** Flags that toggle a boolean option, keyed by every accepted spelling. */
+const BOOLEAN_FLAGS: Record<string, (options: CliOptions) => void> = {
+  "--help": (options) => {
+    options.help = true;
+  },
+  "-h": (options) => {
+    options.help = true;
+  },
+  "--version": (options) => {
+    options.version = true;
+  },
+  "-v": (options) => {
+    options.version = true;
+  },
+  "--prod": (options) => {
+    options.scope = "prod";
+  },
+  "--dev": (options) => {
+    options.scope = "dev";
+  },
+  "--dry-run": (options) => {
+    options.dryRun = true;
+  },
+  "--json": (options) => {
+    options.json = true;
+  },
+  "--debug": (options) => {
+    options.debug = true;
+  },
+  "-d": (options) => {
+    options.debug = true;
+  },
+  "--show-commands": (options) => {
+    options.showCommands = true;
+  },
+  "--verbose": (options) => {
+    options.verbose = true;
+  },
+  "--no-color": (options) => {
+    options.color = false;
+  },
+};
 
-  throw new CliUsageError(`Invalid --manager value: ${value}`);
-}
-
-function parseAuditLevel(value: string): AuditLevel {
-  if (
-    value === "low" ||
-    value === "moderate" ||
-    value === "high" ||
-    value === "critical"
-  ) {
-    return value;
-  }
-
-  throw new CliUsageError(`Invalid --audit-level value: ${value}`);
-}
-
-function parseDedupeMode(value: string): DedupeMode {
-  if (value === "auto" || value === "always" || value === "never") {
-    return value;
-  }
-
-  throw new CliUsageError(`Invalid --dedupe value: ${value}`);
-}
+/** Flags taking a value, accepted as both `--flag value` and `--flag=value`. */
+const VALUE_FLAGS: Record<
+  string,
+  (options: CliOptions, value: string) => void
+> = {
+  "--cwd": (options, value) => {
+    options.cwd = path.resolve(value);
+  },
+  "--manager": (options, value) => {
+    options.manager = parseEnum("--manager", MANAGER_OVERRIDES, value);
+  },
+  "--audit-level": (options, value) => {
+    options.threshold = parseEnum("--audit-level", AUDIT_LEVELS, value);
+  },
+  "--dedupe": (options, value) => {
+    options.dedupe = parseEnum("--dedupe", DEDUPE_MODES, value);
+  },
+};
 
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
@@ -144,119 +195,45 @@ function parseArgs(argv: string[]): CliOptions {
   };
 
   for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
+    const arg = argv[index] ?? "";
+    const applyBoolean = BOOLEAN_FLAGS[arg];
 
-    if (arg === "--help" || arg === "-h") {
-      options.help = true;
+    if (applyBoolean) {
+      applyBoolean(options);
       continue;
     }
 
-    if (arg === "--version" || arg === "-v") {
-      options.version = true;
+    const separatorIndex = arg.indexOf("=");
+    const flag = separatorIndex === -1 ? arg : arg.slice(0, separatorIndex);
+    const applyValue = VALUE_FLAGS[flag];
+
+    if (!applyValue) {
+      throw new CliUsageError(`Unknown option: ${arg}`);
+    }
+
+    if (separatorIndex !== -1) {
+      applyValue(options, arg.slice(separatorIndex + 1));
       continue;
     }
 
-    if (arg === "--prod") {
-      options.scope = "prod";
-      continue;
+    const value = argv[index + 1];
+
+    if (!value || value.startsWith("--")) {
+      throw new CliUsageError(`Missing value for ${flag}`);
     }
 
-    if (arg === "--dev") {
-      options.scope = "dev";
-      continue;
-    }
-
-    if (arg === "--dry-run") {
-      options.dryRun = true;
-      continue;
-    }
-
-    if (arg === "--dedupe") {
-      options.dedupe = parseDedupeMode(expectValue(argv, index, "--dedupe"));
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith("--dedupe=")) {
-      options.dedupe = parseDedupeMode(arg.slice("--dedupe=".length));
-      continue;
-    }
-
-    if (arg === "--json") {
-      options.json = true;
-      continue;
-    }
-
-    if (arg === "--debug" || arg === "-d") {
-      options.debug = true;
-      continue;
-    }
-
-    if (arg === "--show-commands") {
-      options.showCommands = true;
-      continue;
-    }
-
-    if (arg === "--verbose") {
-      options.verbose = true;
-      continue;
-    }
-
-    if (arg === "--no-color") {
-      options.color = false;
-      continue;
-    }
-
-    if (arg === "--cwd") {
-      options.cwd = path.resolve(expectValue(argv, index, "--cwd"));
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith("--cwd=")) {
-      options.cwd = path.resolve(arg.slice("--cwd=".length));
-      continue;
-    }
-
-    if (arg === "--manager") {
-      options.manager = parseManager(expectValue(argv, index, "--manager"));
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith("--manager=")) {
-      options.manager = parseManager(arg.slice("--manager=".length));
-      continue;
-    }
-
-    if (arg === "--audit-level") {
-      options.threshold = parseAuditLevel(
-        expectValue(argv, index, "--audit-level"),
-      );
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith("--audit-level=")) {
-      options.threshold = parseAuditLevel(arg.slice("--audit-level=".length));
-      continue;
-    }
-
-    throw new CliUsageError(`Unknown option: ${arg}`);
+    applyValue(options, value);
+    index += 1;
   }
 
   return options;
 }
 
-async function confirmPnpmMinimumReleaseAgeExclusions(input: {
-  manager: "pnpm" | "bun" | "yarn";
-  configSetting:
-    | "minimumReleaseAgeExclude"
-    | "minimumReleaseAgeExcludes"
-    | "npmPreapprovedPackages";
-  packages: string[];
-  output: NodeJS.WriteStream;
-}): Promise<boolean> {
+async function confirmPnpmMinimumReleaseAgeExclusions(
+  input: ConfirmMinimumReleaseAgeExclusionsInput & {
+    output: NodeJS.WriteStream;
+  },
+): Promise<boolean> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: input.output,
@@ -421,33 +398,16 @@ if (invokedDirectly) {
       process.exitCode = exitCode;
     })
     .catch((error: unknown) => {
-      const wantsJsonError = process.argv.includes("--json");
-
-      if (error instanceof ManagerDetectionError) {
-        process.stderr.write(
-          wantsJsonError
-            ? `${JSON.stringify({ error: { message: error.message, exitCode: error.exitCode } }, null, 2)}\n`
-            : `${formatFailure(error)}\n`,
-        );
-        process.exitCode = error.exitCode;
-        return;
-      }
-
-      if (error instanceof CliUsageError) {
-        process.stderr.write(
-          wantsJsonError
-            ? `${JSON.stringify({ error: { message: error.message, exitCode: 1 } }, null, 2)}\n`
-            : `${error.message}\n`,
-        );
-        process.exitCode = 1;
-        return;
-      }
+      const exitCode =
+        error instanceof ManagerDetectionError ? error.exitCode : 1;
+      const message =
+        error instanceof CliUsageError ? error.message : formatFailure(error);
 
       process.stderr.write(
-        wantsJsonError
-          ? `${JSON.stringify({ error: { message: formatFailure(error), exitCode: 1 } }, null, 2)}\n`
-          : `${formatFailure(error)}\n`,
+        process.argv.includes("--json")
+          ? `${JSON.stringify({ error: { message, exitCode } }, null, 2)}\n`
+          : `${message}\n`,
       );
-      process.exitCode = 1;
+      process.exitCode = exitCode;
     });
 }

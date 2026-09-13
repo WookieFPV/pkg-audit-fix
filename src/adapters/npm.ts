@@ -7,8 +7,17 @@ import {
   parseJsonObject,
   vulnerabilityKey,
 } from "../core/normalize.js";
-import type { NormalizedVulnerability } from "../core/types.js";
+import type { AuditScope, NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
+import { readOptionalString, readStringWithFallback } from "./shared.js";
+
+function scopeArgs(scope: AuditScope): string[] {
+  if (scope === "prod") {
+    return ["--omit=dev"];
+  }
+
+  return scope === "dev" ? ["--only=dev"] : [];
+}
 
 export const npmAdapter: PackageManagerAdapter = {
   manager: "npm",
@@ -16,32 +25,16 @@ export const npmAdapter: PackageManagerAdapter = {
   remediationExitCodes: [0, 1],
 
   buildAuditProcess(context) {
-    const args = ["audit", "--json"];
-
-    if (context.scope === "prod") {
-      args.push("--omit=dev");
-    } else if (context.scope === "dev") {
-      args.push("--only=dev");
-    }
-
     return {
       command: "npm",
-      args,
+      args: ["audit", "--json", ...scopeArgs(context.scope)],
     };
   },
 
   buildRemediationProcess(context) {
-    const args = ["audit", "fix", "--json"];
-
-    if (context.scope === "prod") {
-      args.push("--omit=dev");
-    } else if (context.scope === "dev") {
-      args.push("--only=dev");
-    }
-
     return {
       command: "npm",
-      args,
+      args: ["audit", "fix", "--json", ...scopeArgs(context.scope)],
     };
   },
 
@@ -68,27 +61,26 @@ export const npmAdapter: PackageManagerAdapter = {
         continue;
       }
 
-      const packageName =
-        typeof vulnerability.name === "string"
-          ? vulnerability.name
-          : typeof vulnerability.packageName === "string"
-            ? vulnerability.packageName
-            : "unknown";
-      const installedVersion =
-        typeof vulnerability.installedVersion === "string"
-          ? vulnerability.installedVersion
-          : typeof vulnerability.version === "string"
-            ? vulnerability.version
-            : typeof vulnerability.currentVersion === "string"
-              ? vulnerability.currentVersion
-              : "unknown";
+      const packageName = readStringWithFallback(vulnerability, [
+        "name",
+        "packageName",
+      ]);
+      const installedVersion = readStringWithFallback(vulnerability, [
+        "installedVersion",
+        "version",
+        "currentVersion",
+      ]);
       const severity = normalizeSeverity(vulnerability.severity);
       const via = Array.isArray(vulnerability.via)
         ? vulnerability.via.filter(isRecord)
         : [];
       const advisoryIds = collectAdvisoryIds(vulnerability, ...via);
-      const titledVia = via.find((item) => typeof item.title === "string");
-      const linkedVia = via.find((item) => typeof item.url === "string");
+      const title = via
+        .map((item) => readOptionalString(item, "title"))
+        .find((value) => value !== undefined);
+      const url = via
+        .map((item) => readOptionalString(item, "url"))
+        .find((value) => value !== undefined);
 
       entries.push({
         key: vulnerabilityKey(packageName, installedVersion, advisoryIds),
@@ -96,9 +88,8 @@ export const npmAdapter: PackageManagerAdapter = {
         installedVersion,
         severity,
         advisoryIds,
-        title:
-          typeof titledVia?.title === "string" ? titledVia.title : undefined,
-        url: typeof linkedVia?.url === "string" ? linkedVia.url : undefined,
+        title,
+        url,
       });
     }
 

@@ -42,117 +42,104 @@ function formatCommand(command: readonly string[]): string {
   return command.map(formatShellWord).join(" ");
 }
 
-function splitSummaryLabel(label: string, prefix: string): string | null {
-  if (label === prefix) {
-    return "";
-  }
-
-  const withSeparator = `${prefix}: `;
-
-  return label.startsWith(withSeparator)
-    ? label.slice(withSeparator.length)
-    : null;
-}
-
-function getDisplayText(label: string): {
+interface StepDisplayText {
   running: string;
   success: string;
   failure: string;
-} {
-  const cleanPnpmMinimumReleaseAgeExcludeSummary = splitSummaryLabel(
-    label,
-    "Clean pnpm minimumReleaseAgeExclude",
+}
+
+/** Verb forms for a step, e.g. `["Auditing", "Audited"]` + a shared object. */
+function displayText(
+  presentParticiple: string,
+  pastTense: string,
+  subject: string,
+): StepDisplayText {
+  return {
+    running: `${presentParticiple} ${subject}`,
+    success: `${pastTense} ${subject}`,
+    failure: `${presentParticiple} ${subject} failed`,
+  };
+}
+
+/**
+ * Labels that carry a trailing summary, as `"<prefix>: <summary>"`. The summary
+ * is appended to the success text in parentheses.
+ */
+const SUMMARIZED_STEP_LABELS: Record<string, StepDisplayText> = {
+  "Clean pnpm minimumReleaseAgeExclude": displayText(
+    "Cleaning",
+    "Cleaned",
+    "pnpm minimumReleaseAge exclusions",
+  ),
+  "Update pnpm minimumReleaseAgeExclude": displayText(
+    "Updating",
+    "Updated",
+    "pnpm minimumReleaseAge exclusions",
+  ),
+};
+
+const STEP_LABELS: Record<string, StepDisplayText> = {
+  "Initial audit": displayText("Auditing", "Audited", "dependencies"),
+  "Apply fixes": displayText("Applying", "Applied", "available fixes"),
+  "Reinstall dependencies": displayText(
+    "Reinstalling",
+    "Reinstalled",
+    "dependencies",
+  ),
+  "Recheck after fixes": displayText(
+    "Rechecking",
+    "Rechecked",
+    "vulnerabilities",
+  ),
+  "Final audit": displayText(
+    "Checking",
+    "Checked",
+    "remaining vulnerabilities",
+  ),
+  "Consolidate dependency tree": displayText(
+    "Consolidating",
+    "Consolidated",
+    "dependency tree",
+  ),
+  "Read pnpm minimumReleaseAgeExclude": displayText(
+    "Reading",
+    "Read",
+    "pnpm minimumReleaseAge exclusions",
+  ),
+  "Update bun minimumReleaseAgeExcludes": displayText(
+    "Updating",
+    "Updated",
+    "bun minimumReleaseAge exclusions",
+  ),
+  "Update yarn npmPreapprovedPackages": displayText(
+    "Updating",
+    "Updated",
+    "Yarn preapproved packages",
+  ),
+};
+
+function getDisplayText(label: string): StepDisplayText {
+  for (const [prefix, text] of Object.entries(SUMMARIZED_STEP_LABELS)) {
+    if (label === prefix) {
+      return text;
+    }
+
+    if (label.startsWith(`${prefix}: `)) {
+      const summary = label.slice(prefix.length + 2);
+
+      return summary.length > 0
+        ? { ...text, success: `${text.success} (${summary})` }
+        : text;
+    }
+  }
+
+  return (
+    STEP_LABELS[label] ?? {
+      running: label,
+      success: `${label} complete`,
+      failure: `${label} failed`,
+    }
   );
-
-  if (cleanPnpmMinimumReleaseAgeExcludeSummary !== null) {
-    return {
-      running: "Cleaning pnpm minimumReleaseAge exclusions",
-      success:
-        cleanPnpmMinimumReleaseAgeExcludeSummary.length > 0
-          ? `Cleaned pnpm minimumReleaseAge exclusions (${cleanPnpmMinimumReleaseAgeExcludeSummary})`
-          : "Cleaned pnpm minimumReleaseAge exclusions",
-      failure: "Cleaning pnpm minimumReleaseAge exclusions failed",
-    };
-  }
-
-  const updatePnpmMinimumReleaseAgeExcludeSummary = splitSummaryLabel(
-    label,
-    "Update pnpm minimumReleaseAgeExclude",
-  );
-
-  if (updatePnpmMinimumReleaseAgeExcludeSummary !== null) {
-    return {
-      running: "Updating pnpm minimumReleaseAge exclusions",
-      success:
-        updatePnpmMinimumReleaseAgeExcludeSummary.length > 0
-          ? `Updated pnpm minimumReleaseAge exclusions (${updatePnpmMinimumReleaseAgeExcludeSummary})`
-          : "Updated pnpm minimumReleaseAge exclusions",
-      failure: "Updating pnpm minimumReleaseAge exclusions failed",
-    };
-  }
-
-  switch (label) {
-    case "Initial audit":
-      return {
-        running: "Auditing dependencies",
-        success: "Audited dependencies",
-        failure: "Dependency audit failed",
-      };
-    case "Apply fixes":
-      return {
-        running: "Applying available fixes",
-        success: "Applied available fixes",
-        failure: "Applying available fixes failed",
-      };
-    case "Reinstall dependencies":
-      return {
-        running: "Reinstalling dependencies",
-        success: "Reinstalled dependencies",
-        failure: "Reinstalling dependencies failed",
-      };
-    case "Recheck after fixes":
-      return {
-        running: "Rechecking vulnerabilities",
-        success: "Rechecked vulnerabilities",
-        failure: "Rechecking vulnerabilities failed",
-      };
-    case "Final audit":
-      return {
-        running: "Checking remaining vulnerabilities",
-        success: "Checked remaining vulnerabilities",
-        failure: "Checking remaining vulnerabilities failed",
-      };
-    case "Consolidate dependency tree":
-      return {
-        running: "Consolidating dependency tree",
-        success: "Consolidated dependency tree",
-        failure: "Consolidating dependency tree failed",
-      };
-    case "Read pnpm minimumReleaseAgeExclude":
-      return {
-        running: "Reading pnpm minimumReleaseAge exclusions",
-        success: "Read pnpm minimumReleaseAge exclusions",
-        failure: "Reading pnpm minimumReleaseAge exclusions failed",
-      };
-    case "Update bun minimumReleaseAgeExcludes":
-      return {
-        running: "Updating bun minimumReleaseAge exclusions",
-        success: "Updated bun minimumReleaseAge exclusions",
-        failure: "Updating bun minimumReleaseAge exclusions failed",
-      };
-    case "Update yarn npmPreapprovedPackages":
-      return {
-        running: "Updating Yarn preapproved packages",
-        success: "Updated Yarn preapproved packages",
-        failure: "Updating Yarn preapproved packages failed",
-      };
-    default:
-      return {
-        running: label,
-        success: `${label} complete`,
-        failure: `${label} failed`,
-      };
-  }
 }
 
 export function createStepLifecycleReporter(
@@ -181,8 +168,6 @@ export function createStepLifecycleReporter(
     `${getDisplayText(step.label).running}...`;
   const successText = (step: StepEvent) => getDisplayText(step.label).success;
   const failureText = (step: StepEvent) => getDisplayText(step.label).failure;
-  const fallbackSuccessText = (step: StepEvent) => `✔ ${successText(step)}\n`;
-  const fallbackFailureText = (step: StepEvent) => `✖ ${failureText(step)}\n`;
 
   return {
     start(step) {
@@ -217,7 +202,7 @@ export function createStepLifecycleReporter(
 
       if (pausedSteps.has(step.label)) {
         pausedSteps.delete(step.label);
-        options.write(fallbackSuccessText(step));
+        options.write(`✔ ${successText(step)}\n`);
       }
     },
 
@@ -235,7 +220,7 @@ export function createStepLifecycleReporter(
 
       if (pausedSteps.has(step.label)) {
         pausedSteps.delete(step.label);
-        options.write(fallbackFailureText(step));
+        options.write(`✖ ${failureText(step)}\n`);
       }
     },
 

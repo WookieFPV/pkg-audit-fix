@@ -9,15 +9,16 @@ import {
 } from "../core/normalize.js";
 import type { NormalizedVulnerability } from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
+import {
+  appendConfigBlock,
+  createExclusionCollector,
+  type MinimumReleaseAgeExclusion,
+  readOptionalString,
+  readStringWithFallback,
+} from "./shared.js";
 
 const BUN_METADATA_KEYS = new Set(["metadata", "summary"]);
 const BUN_MINIMUM_RELEASE_AGE_EXCLUDES_KEY = "minimumReleaseAgeExcludes";
-
-export interface BunMinimumReleaseAgeExclusion {
-  packageName: string;
-  version: string;
-  specifier: string;
-}
 
 function isBunRegistryAdvisory(
   value: unknown,
@@ -203,23 +204,9 @@ function parseBunFailedResolutionSpecifier(
 export function extractBunMinimumReleaseAgeExclusions(result: {
   stdout: string;
   stderr: string;
-}): BunMinimumReleaseAgeExclusion[] {
-  const seen = new Set<string>();
-  const exclusions: BunMinimumReleaseAgeExclusion[] = [];
-  const pushExclusion = (packageName: string, version: string) => {
-    const specifier = packageName;
-
-    if (seen.has(specifier)) {
-      return;
-    }
-
-    seen.add(specifier);
-    exclusions.push({
-      packageName,
-      version,
-      specifier,
-    });
-  };
+}): MinimumReleaseAgeExclusion[] {
+  // bun excludes whole packages rather than specific versions.
+  const collector = createExclusionCollector((packageName) => packageName);
 
   for (const source of [result.stdout, result.stderr]) {
     const hasMinimumReleaseAgeSignal = source.includes("minimum-release-age");
@@ -236,7 +223,7 @@ export function extractBunMinimumReleaseAgeExclusions(result: {
         continue;
       }
 
-      pushExclusion(packageName, version);
+      collector.push(packageName, version);
     }
 
     if (!hasMinimumReleaseAgeSignal) {
@@ -255,7 +242,7 @@ export function extractBunMinimumReleaseAgeExclusions(result: {
         continue;
       }
 
-      pushExclusion(packageName, version);
+      collector.push(packageName, version);
     }
 
     const failedResolutionMatches = source.matchAll(
@@ -269,11 +256,11 @@ export function extractBunMinimumReleaseAgeExclusions(result: {
         continue;
       }
 
-      pushExclusion(parsedSpecifier.packageName, parsedSpecifier.version);
+      collector.push(parsedSpecifier.packageName, parsedSpecifier.version);
     }
   }
 
-  return exclusions;
+  return collector.exclusions;
 }
 
 export function parseBunMinimumReleaseAgeExcludesConfig(
@@ -314,14 +301,7 @@ export function updateBunMinimumReleaseAgeExcludesConfig(
     return `${source.slice(0, installSection.bodyStart)}${assignment}${newline}${source.slice(installSection.bodyStart)}`;
   }
 
-  const prefix =
-    source.length === 0
-      ? ""
-      : source.endsWith("\n") || source.endsWith("\r")
-        ? ""
-        : newline;
-
-  return `${source}${prefix}[install]${newline}${assignment}${newline}`;
+  return appendConfigBlock(source, `[install]${newline}${assignment}`, newline);
 }
 
 export const bunAdapter: PackageManagerAdapter = {
@@ -329,19 +309,18 @@ export const bunAdapter: PackageManagerAdapter = {
   auditExitCodes: [0, 1],
 
   buildAuditProcess(context) {
-    const args = ["audit", "--json", `--audit-level=${context.threshold}`];
-
-    if (context.scope === "prod") {
-      args.push("--prod");
-    }
-
     return {
       command: "bun",
-      args,
+      args: [
+        "audit",
+        "--json",
+        `--audit-level=${context.threshold}`,
+        ...(context.scope === "prod" ? ["--prod"] : []),
+      ],
     };
   },
 
-  buildRemediationProcess(_context) {
+  buildRemediationProcess() {
     return null;
   },
 
@@ -367,50 +346,27 @@ export const bunAdapter: PackageManagerAdapter = {
         continue;
       }
 
-      const packageName =
-        typeof item.package === "string"
-          ? item.package
-          : typeof item.name === "string"
-            ? item.name
-            : typeof item.module_name === "string"
-              ? item.module_name
-              : "unknown";
-      const installedVersion =
-        typeof item.version === "string"
-          ? item.version
-          : typeof item.installedVersion === "string"
-            ? item.installedVersion
-            : "unknown";
+      const packageName = readStringWithFallback(item, [
+        "package",
+        "name",
+        "module_name",
+      ]);
+      const installedVersion = readStringWithFallback(item, [
+        "version",
+        "installedVersion",
+      ]);
       const severity = normalizeSeverity(item.severity);
       const advisories = Array.isArray(item.advisories)
         ? item.advisories.filter(isRecord)
         : [item];
       const advisoryIds = collectAdvisoryIds(item, ...advisories);
-      const advisoryWithTitle = advisories.find(
-        (advisory) => typeof advisory.title === "string",
-      );
-      const advisoryWithUrl = advisories.find(
-        (advisory) => typeof advisory.url === "string",
-      );
-      const title =
-        typeof item.title === "string"
-          ? item.title
-          : typeof advisoryWithTitle?.title === "string"
-            ? advisoryWithTitle.title
-            : undefined;
-      const url =
-        typeof item.url === "string"
-          ? item.url
-          : typeof advisoryWithUrl?.url === "string"
-            ? advisoryWithUrl.url
-            : undefined;
-      const advisoryWithVulnerableVersions = advisories.find(
-        (advisory) => typeof advisory.vulnerable_versions === "string",
-      );
+      const readAdvisoryField = (key: string) =>
+        readOptionalString(item, key) ??
+        advisories
+          .map((advisory) => readOptionalString(advisory, key))
+          .find((value) => value !== undefined);
       const remediation = remediationFromVulnerableVersions(
-        typeof item.vulnerable_versions === "string"
-          ? item.vulnerable_versions
-          : advisoryWithVulnerableVersions?.vulnerable_versions,
+        readAdvisoryField("vulnerable_versions"),
       );
 
       entries.push({
@@ -420,8 +376,8 @@ export const bunAdapter: PackageManagerAdapter = {
         severity,
         advisoryIds,
         remediation,
-        title,
-        url,
+        title: readAdvisoryField("title"),
+        url: readAdvisoryField("url"),
       });
     }
 

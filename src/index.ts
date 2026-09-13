@@ -6,6 +6,8 @@ export type {
   DedupeMode,
   DetectionResult,
   JsonSummary,
+  MinimumReleaseAgeManager,
+  MinimumReleaseAgeSetting,
   NormalizedAuditSnapshot,
   NormalizedVulnerability,
   PackageManager,

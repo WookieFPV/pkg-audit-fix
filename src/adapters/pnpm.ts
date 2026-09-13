@@ -1,23 +1,32 @@
 import {
-  collectAdvisoryIds,
+  asStringArray,
   countsFromMetadata,
   createSnapshot,
   isRecord,
-  normalizeSeverity,
   parseJsonObject,
   uniqueSorted,
-  vulnerabilityKey,
 } from "../core/normalize.js";
-import type { CommandResult, NormalizedVulnerability } from "../core/types.js";
+import type {
+  AuditScope,
+  CommandResult,
+  NormalizedVulnerability,
+} from "../core/types.js";
 import type { PackageManagerAdapter } from "./base.js";
+import {
+  createExclusionCollector,
+  type MinimumReleaseAgeExclusion,
+  registryAdvisoryEntries,
+} from "./shared.js";
+
+function scopeArgs(scope: AuditScope): string[] {
+  if (scope === "prod") {
+    return ["--prod"];
+  }
+
+  return scope === "dev" ? ["--dev"] : [];
+}
 
 const MINIMUM_RELEASE_AGE_ERROR_CODE = "ERR_PNPM_NO_MATURE_MATCHING_VERSION";
-
-export interface PnpmMinimumReleaseAgeExclusion {
-  packageName: string;
-  version: string;
-  specifier: string;
-}
 
 function parsePnpmReporterRecords(text: string): unknown[] {
   const trimmed = text.trim();
@@ -112,23 +121,10 @@ function readVersion(record: Record<string, unknown>): string | null {
 
 export function extractPnpmMinimumReleaseAgeExclusions(
   result: Pick<CommandResult, "stdout" | "stderr">,
-): PnpmMinimumReleaseAgeExclusion[] {
-  const seen = new Set<string>();
-  const exclusions: PnpmMinimumReleaseAgeExclusion[] = [];
-  const pushExclusion = (packageName: string, version: string) => {
-    const specifier = `${packageName}@${version}`;
-
-    if (seen.has(specifier)) {
-      return;
-    }
-
-    seen.add(specifier);
-    exclusions.push({
-      packageName,
-      version,
-      specifier,
-    });
-  };
+): MinimumReleaseAgeExclusion[] {
+  const collector = createExclusionCollector(
+    (packageName, version) => `${packageName}@${version}`,
+  );
 
   for (const source of [result.stdout, result.stderr]) {
     for (const record of parsePnpmReporterRecords(source)) {
@@ -147,7 +143,7 @@ export function extractPnpmMinimumReleaseAgeExclusions(
         continue;
       }
 
-      pushExclusion(packageName, version);
+      collector.push(packageName, version);
     }
 
     const messageMatches = source.matchAll(
@@ -162,91 +158,65 @@ export function extractPnpmMinimumReleaseAgeExclusions(
         continue;
       }
 
-      pushExclusion(packageName, version);
+      collector.push(packageName, version);
     }
   }
 
-  return exclusions;
+  return collector.exclusions;
+}
+
+/**
+ * Parses the JSON printed by `pnpm config get --json`, treating an empty or
+ * unset value as `undefined`.
+ */
+function parsePnpmConfigJson(stdout: string): unknown {
+  const trimmed = stdout.trim();
+
+  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
+    return undefined;
+  }
+
+  return JSON.parse(trimmed) as unknown;
 }
 
 export function parsePnpmMinimumReleaseAgeExcludeConfig(
   stdout: string,
 ): string[] {
-  const trimmed = stdout.trim();
-
-  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
-    return [];
-  }
-
-  const parsed = JSON.parse(trimmed) as unknown;
-
-  if (Array.isArray(parsed)) {
-    return parsed.filter((entry): entry is string => typeof entry === "string");
-  }
+  const parsed = parsePnpmConfigJson(stdout);
 
   if (typeof parsed === "string") {
     return [parsed];
   }
 
-  return [];
+  return asStringArray(parsed);
 }
 
 export function parsePnpmMinimumReleaseAgeConfig(
   stdout: string,
 ): number | null {
-  const trimmed = stdout.trim();
+  const parsed = parsePnpmConfigJson(stdout);
+  const value =
+    typeof parsed === "number"
+      ? parsed
+      : typeof parsed === "string" && parsed.trim().length > 0
+        ? Number(parsed)
+        : Number.NaN;
 
-  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
-    return null;
-  }
-
-  const parsed = JSON.parse(trimmed) as unknown;
-
-  if (typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0) {
-    return parsed;
-  }
-
-  if (typeof parsed === "string" && parsed.trim().length > 0) {
-    const value = Number(parsed);
-
-    if (Number.isFinite(value) && value >= 0) {
-      return value;
-    }
-  }
-
-  return null;
+  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 export function parsePnpmAuditIgnoreListConfig(stdout: string): string[] {
-  const trimmed = stdout.trim();
-
-  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
-    return [];
-  }
-
-  const parsed = JSON.parse(trimmed) as unknown;
-
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-
   return uniqueSorted(
-    parsed
-      .filter((entry): entry is string => typeof entry === "string")
-      .map((entry) => entry.toUpperCase()),
+    asStringArray(parsePnpmConfigJson(stdout)).map((entry) =>
+      entry.toUpperCase(),
+    ),
   );
 }
 
 export function parsePnpmPackagePublishedTimes(
   stdout: string,
 ): Record<string, string> {
-  const trimmed = stdout.trim();
-
-  if (trimmed.length === 0 || trimmed === "null" || trimmed === "undefined") {
-    return {};
-  }
-
-  const parsed = JSON.parse(trimmed) as unknown;
+  const parsed = parsePnpmConfigJson(stdout);
 
   if (!isRecord(parsed)) {
     return {};
@@ -265,38 +235,28 @@ export const pnpmAdapter: PackageManagerAdapter = {
   remediationExitCodes: [0, 1],
 
   buildAuditProcess(context) {
-    const args = ["audit", "--json", `--audit-level=${context.threshold}`];
-
-    if (context.scope === "prod") {
-      args.push("--prod");
-    } else if (context.scope === "dev") {
-      args.push("--dev");
-    }
-
     return {
       command: "pnpm",
-      args,
+      args: [
+        "audit",
+        "--json",
+        `--audit-level=${context.threshold}`,
+        ...scopeArgs(context.scope),
+      ],
     };
   },
 
   buildRemediationProcess(context) {
-    const args = [
-      "audit",
-      "--json",
-      "--fix",
-      "override",
-      `--audit-level=${context.threshold}`,
-    ];
-
-    if (context.scope === "prod") {
-      args.push("--prod");
-    } else if (context.scope === "dev") {
-      args.push("--dev");
-    }
-
     return {
       command: "pnpm",
-      args,
+      args: [
+        "audit",
+        "--json",
+        "--fix",
+        "override",
+        `--audit-level=${context.threshold}`,
+        ...scopeArgs(context.scope),
+      ],
     };
   },
 
@@ -319,55 +279,9 @@ export const pnpmAdapter: PackageManagerAdapter = {
     const advisories = isRecord(json.advisories)
       ? Object.values(json.advisories)
       : [];
-    const entries: NormalizedVulnerability[] = [];
-
-    for (const advisory of advisories) {
-      if (!isRecord(advisory)) {
-        continue;
-      }
-
-      const packageName =
-        typeof advisory.module_name === "string"
-          ? advisory.module_name
-          : typeof advisory.name === "string"
-            ? advisory.name
-            : "unknown";
-      const severity = normalizeSeverity(advisory.severity);
-      const title =
-        typeof advisory.title === "string" ? advisory.title : undefined;
-      const url = typeof advisory.url === "string" ? advisory.url : undefined;
-      const advisoryIds = collectAdvisoryIds(advisory);
-      const findings = Array.isArray(advisory.findings)
-        ? advisory.findings
-        : [];
-      const versions = uniqueSorted(
-        findings.flatMap((finding) => {
-          if (!isRecord(finding)) {
-            return [];
-          }
-
-          if (typeof finding.version === "string") {
-            return [finding.version];
-          }
-
-          return [];
-        }),
-      );
-
-      for (const installedVersion of versions.length > 0
-        ? versions
-        : ["unknown"]) {
-        entries.push({
-          key: vulnerabilityKey(packageName, installedVersion, advisoryIds),
-          packageName,
-          installedVersion,
-          severity,
-          advisoryIds,
-          title,
-          url,
-        });
-      }
-    }
+    const entries: NormalizedVulnerability[] = advisories
+      .filter(isRecord)
+      .flatMap(registryAdvisoryEntries);
 
     return createSnapshot({
       manager: "pnpm",

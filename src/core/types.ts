@@ -64,12 +64,18 @@ export interface CommandResult {
   signal: NodeJS.Signals | null;
 }
 
+/** Package managers that can block installs via a minimum release age policy. */
+export type MinimumReleaseAgeManager = "pnpm" | "bun" | "yarn";
+
+/** Per-manager config key holding the packages exempted from that policy. */
+export type MinimumReleaseAgeSetting =
+  | "minimumReleaseAgeExclude"
+  | "minimumReleaseAgeExcludes"
+  | "npmPreapprovedPackages";
+
 export interface ConfirmMinimumReleaseAgeExclusionsInput {
-  manager: "pnpm" | "bun" | "yarn";
-  configSetting:
-    | "minimumReleaseAgeExclude"
-    | "minimumReleaseAgeExcludes"
-    | "npmPreapprovedPackages";
+  manager: MinimumReleaseAgeManager;
+  configSetting: MinimumReleaseAgeSetting;
   packages: string[];
 }
 
@@ -179,22 +185,15 @@ export class CommandExecutionError extends Error {
 
 export class MinimumReleaseAgeDeclinedError extends Error {
   readonly step: CommandStep;
-  readonly manager: "pnpm" | "bun" | "yarn";
-  readonly configSetting:
-    | "minimumReleaseAgeExclude"
-    | "minimumReleaseAgeExcludes"
-    | "npmPreapprovedPackages";
+  readonly manager: MinimumReleaseAgeManager;
+  readonly configSetting: MinimumReleaseAgeSetting;
   readonly packages: string[];
 
-  constructor(input: {
-    step: CommandStep;
-    manager: "pnpm" | "bun" | "yarn";
-    configSetting:
-      | "minimumReleaseAgeExclude"
-      | "minimumReleaseAgeExcludes"
-      | "npmPreapprovedPackages";
-    packages: string[];
-  }) {
+  constructor(
+    input: ConfirmMinimumReleaseAgeExclusionsInput & {
+      step: CommandStep;
+    },
+  ) {
     const { step, manager, configSetting, packages } = input;
     const packageList = packages.join(", ");
     const action =
