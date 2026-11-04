@@ -64,7 +64,7 @@
   },
   "dependencies": {
     "picospinner": "3.0.0",
-    "package-manager-detector": "1.6.0"
+    "package-manager-detector": "1.9.0"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "0.18.5",
