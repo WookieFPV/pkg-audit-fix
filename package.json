@@ -63,7 +63,7 @@
     "url": "git+https://github.com/WookieFPV/pkg-audit-fix.git"
   },
   "dependencies": {
-    "picospinner": "3.0.0",
+    "picospinner": "3.1.2",
     "package-manager-detector": "1.9.0"
   },
   "devDependencies": {
